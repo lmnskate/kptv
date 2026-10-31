@@ -1,0 +1,24 @@
+# Project state
+data/*
+backups/
+.env
+.venv/
+
+# Project-local notes (kept out of the repo)
+AGENTS.md
+TODO.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

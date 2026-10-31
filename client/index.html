@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<title>KPTV — KinoPub для Smart TV</title>
+<link rel="stylesheet" href="css/client.css?v=24">
+<!-- hls.min.js грузится лениво из app.js при первом воспроизведении -->
+</head>
+<body>
+<div id="stage">
+
+  <!-- Общий «хром» браузерных экранов: верхнее меню -->
+  <header id="topnav"></header>
+
+  <!-- Экран: активация устройства -->
+  <section id="screen-register" class="screen hidden">
+    <div class="register-box">
+      <div class="register-logo"><b>KPTV</b></div>
+      <div class="register-title">Активация устройства</div>
+      <div id="register-code" class="register-code">·····</div>
+      <img id="register-qr" class="register-qr hidden" alt="" />
+      <div id="register-hint" class="register-hint">
+        Наведите камеру телефона на QR-код<br>или откройте kino.pub → «Мои устройства» и введите этот код
+      </div>
+      <div id="register-retry" class="btn focusable hidden">Повторить</div>
+    </div>
+  </section>
+
+  <!-- Экран: Главная -->
+  <section id="screen-home" class="screen hidden">
+    <div id="home-scroll"><div id="home-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Каталог (Фильмы/Сериалы) -->
+  <section id="screen-catalog" class="screen hidden">
+    <div class="screen-scroll"><div id="catalog-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: сетка раздела («Смотреть все») -->
+  <section id="screen-section" class="screen hidden">
+    <div class="screen-scroll"><div id="section-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Подборки -->
+  <section id="screen-collections" class="screen hidden">
+    <div class="screen-scroll"><div id="collections-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Поиск -->
+  <section id="screen-search" class="screen hidden">
+    <div class="screen-scroll"><div id="search-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Закладки -->
+  <section id="screen-bookmarks" class="screen hidden">
+    <div class="screen-scroll"><div id="bookmarks-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: История -->
+  <section id="screen-history" class="screen hidden">
+    <div class="screen-scroll"><div id="history-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Настройки -->
+  <section id="screen-settings" class="screen hidden">
+    <div class="screen-scroll"><div id="settings-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Карточка контента -->
+  <section id="screen-detail" class="screen hidden"></section>
+
+  <!-- Экран: Плеер -->
+  <section id="screen-player" class="screen hidden">
+    <div id="player-video"><video id="pv-video"></video></div>
+    <div id="player-paused" class="hidden"><svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></div>
+    <div id="player-overlay">
+      <div class="player-top">
+        <div>
+          <div id="pv-title"></div>
+          <div id="pv-ep"></div>
+        </div>
+      </div>
+      <div class="player-bottom">
+        <div class="player-progress">
+          <div id="pp-track"><div id="pp-fill"></div></div>
+          <div class="pp-times"><span id="pp-cur">0:00</span><span id="pp-total">0:00</span></div>
+        </div>
+        <div id="player-controls"></div>
+      </div>
+    </div>
+    <div id="player-popup" class="hidden"></div>
+  </section>
+
+  <div id="toast" class="hidden"></div>
+  <div id="modal" class="hidden"><div id="modal-box"></div></div>
+</div>
+<script src="js/api.js?v=21"></script>
+<script src="js/app.js?v=28"></script>
+</body>
+</html>
