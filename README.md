@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.0.2-e8b339)
+![Version](https://img.shields.io/badge/version-1.0.3-e8b339)
 
 [Quick Start](#quick-start) •
 [Connecting a TV](#connecting-a-tv) •
@@ -92,7 +92,7 @@ is kept in localStorage.
 ./kptv.sh status    # container status (state, health, uptime, ports)
 ./kptv.sh stop      # stop everything (data is kept)
 ./kptv.sh backup    # consistent DB backup into ./backups/ (safe on a live DB)
-./kptv.sh admin     # device management — list / export / import (run it for help)
+./kptv.sh admin     # device management — list / delete / reset / export / import (run it for help)
 ```
 
 The stack: `server` (FastAPI app, internal `:8000`) + `nginx` (public `:443`
@@ -106,6 +106,8 @@ run `./kptv.sh install` again (it is idempotent).
 
 ```bash
 ./kptv.sh admin list            # table of registered devices
+./kptv.sh admin delete ID       # delete a device (its TV must be re-registered)
+./kptv.sh admin reset ID        # reset a device's settings to defaults
 ./kptv.sh admin export FILE     # dump the device DB (incl. tokens) to FILE
 ./kptv.sh admin import FILE     # replace the device DB with FILE (restarts the stack)
 ```
@@ -253,7 +255,7 @@ src/                # App service: code + Dockerfile + requirements.txt (compose
 client/             # Smart TV SPA (vanilla ES5 JS, no build step)
     index.html
     css/ js/        # js/hls.min.js is vendored and lazy-loaded at first playback
-cli/                # kptv.sh admin subcommand tree (list/export/import devices)
+cli/                # kptv.sh admin subcommand tree (list/delete/reset/export/import devices)
 docs/               # API contract + historical plan
 conf/               # nginx config (HTTPS-only: app on 443, redirect on 80)
 data/               # SQLite DB + letsencrypt (bind-mounted, gitignored)

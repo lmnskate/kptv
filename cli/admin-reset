@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# usage: reset <id> — reset a device's settings to defaults
+set -euo pipefail
+
+OP=reset
+source "$(dirname "${BASH_SOURCE[0]}")/_leaf.sh"

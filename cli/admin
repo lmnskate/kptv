@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usage: admin — device management (list, export, import)
+# usage: admin — device management (list, delete, reset, export, import)
 set -euo pipefail
 
 CONTEXT=admin

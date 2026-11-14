@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# usage: delete <id> — delete a device (its TV must be re-registered)
+set -euo pipefail
+
+OP=delete
+source "$(dirname "${BASH_SOURCE[0]}")/_leaf.sh"

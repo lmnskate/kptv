@@ -5,4 +5,4 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 check_running
-compose exec -T server python -c "$ADMIN_PY"
+compose exec -T server python -c "$ADMIN_PY" list

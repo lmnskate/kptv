@@ -34,22 +34,19 @@ ensure_mount_dirs() {
     mkdir -p data/letsencrypt
 }
 
-# Device listing, executed by python inside the app container against the
-# live SQLite file. Single-quoted for the shell, so the Python code must use
-# double quotes only.
+# Device management, executed by python inside the app container against the
+# live SQLite file. Operation and device id come from sys.argv:
+#   list | delete <id> | reset <id>
+# Single-quoted for the shell, so the Python code must use double quotes only.
 ADMIN_PY='
 import json
 import sqlite3
+import sys
 
-connection = sqlite3.connect("/data/kp-sqlite.db")
-rows = connection.execute(
-    "SELECT id, refresh, token, settings, user_agent FROM devices ORDER BY rowid"
-).fetchall()
-connection.close()
+op = sys.argv[1]
+device_id = sys.argv[2] if len(sys.argv) > 2 else None
 
-if not rows:
-    print("No devices.")
-    raise SystemExit(0)
+connection = sqlite3.connect("/data/kp-sqlite.db", autocommit=True)
 
 
 def summary(raw):
@@ -72,34 +69,72 @@ def summary(raw):
     return " ".join(parts) if parts else "defaults"
 
 
-table = []
-for device_id, refresh, token, raw_settings, user_agent in rows:
-    ua = user_agent or "-"
-    if len(ua) > 50:
-        ua = ua[:47] + "..."
-    table.append((
-        device_id,
-        ua,
-        "yes" if (refresh or token) else "no",
-        summary(raw_settings),
-    ))
+if op == "list":
+    rows = connection.execute(
+        "SELECT id, refresh, token, settings, user_agent FROM devices ORDER BY rowid"
+    ).fetchall()
+    connection.close()
 
-headers = ("ID", "USER-AGENT", "REGISTERED", "SETTINGS")
-widths = [
-    max(len(str(value)) for value in column)
-    for column in zip(headers, *table)
-]
+    if not rows:
+        print("No devices.")
+        raise SystemExit(0)
 
+    table = []
+    for dev_id, refresh, token, raw_settings, user_agent in rows:
+        ua = user_agent or "-"
+        if len(ua) > 50:
+            ua = ua[:47] + "..."
+        table.append((
+            dev_id,
+            ua,
+            "yes" if (refresh or token) else "no",
+            summary(raw_settings),
+        ))
 
-def line(columns):
-    print("  ".join(
-        str(value).ljust(width)
-        for value, width in zip(columns, widths)
-    ))
+    headers = ("ID", "USER-AGENT", "REGISTERED", "SETTINGS")
+    widths = [
+        max(len(str(value)) for value in column)
+        for column in zip(headers, *table)
+    ]
 
+    def line(columns):
+        print("  ".join(
+            str(value).ljust(width)
+            for value, width in zip(columns, widths)
+        ))
 
-line(headers)
-line(tuple("-" * width for width in widths))
-for row in table:
-    line(row)
+    line(headers)
+    line(tuple("-" * width for width in widths))
+    for row in table:
+        line(row)
+    raise SystemExit(0)
+
+if device_id is None:
+    print("ERROR: missing device id")
+    raise SystemExit(2)
+
+if op == "delete":
+    cursor = connection.execute(
+        "DELETE FROM devices WHERE id = ?1",
+        [device_id],
+    )
+    connection.close()
+    if cursor.rowcount == 0:
+        print("No such device: " + device_id)
+        raise SystemExit(1)
+    print("Deleted: " + device_id)
+elif op == "reset":
+    cursor = connection.execute(
+        "UPDATE devices SET settings = NULL WHERE id = ?1",
+        [device_id],
+    )
+    connection.close()
+    if cursor.rowcount == 0:
+        print("No such device: " + device_id)
+        raise SystemExit(1)
+    print("Settings reset: " + device_id)
+else:
+    connection.close()
+    print("Unknown operation: " + op)
+    raise SystemExit(1)
 '
