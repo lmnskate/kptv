@@ -753,9 +753,129 @@ function updateControlLabels() {
 
 /* Попапы аудио/субтитров/качества строятся из реальных дорожек плеера */
 
+/* Выбор аудио/субтитров запоминаем локально по id тайтла: у KinoPub нет
+   предпочтений дорожек в настройках устройства, а пересоздание плеера
+   (новый сеанс, другая серия) сбрасывало выбор */
+var TRACK_PREFS_KEY = 'kptv-track-prefs';
+
+function trackPrefs() {
+  try { return JSON.parse(localStorage.getItem(TRACK_PREFS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function trackPref(kind) {
+  var info = state.playInfo;
+  if (!info || !info.content_id) return null;
+  var p = trackPrefs()[String(info.content_id)];
+  return p ? p[kind] : null;
+}
+
+function saveTrackPref(kind, value) {
+  var info = state.playInfo;
+  if (!info || !info.content_id) return;
+  var all = trackPrefs();
+  var id = String(info.content_id);
+  all[id] = all[id] || {};
+  all[id][kind] = value;
+  try { localStorage.setItem(TRACK_PREFS_KEY, JSON.stringify(all)); }
+  catch (e) { /* quota / приватный режим — выбор просто не сохранится */ }
+}
+
+/* Единый список субтитров: встроенные дорожки манифеста (hls.js отдаёт свой
+   список, нативный плеер — только textTracks) + внешние WebVTT-файлы из
+   /play. Лейблы внешних файлов намеренно дублируют стиль манифеста
+   («RUS #01»), совпадения переименовываем с пометкой «(файл)» */
+function subtitleOptions() {
+  var opts = [{ kind: 'off', label: 'Выкл' }];
+  var seen = { 'Выкл': true };
+  var i, label;
+  if (state.hls) {
+    var list = state.hls.subtitleTracks || [];
+    for (i = 0; i < list.length; i++) {
+      label = list[i].name || ('Субтитры ' + (i + 1));
+      if (!seen[label]) { opts.push({ kind: 'embedded', index: i, label: label }); seen[label] = true; }
+    }
+  } else {
+    Array.prototype.forEach.call(playerVideo().textTracks, function (t) {
+      if (t.kind !== 'subtitles' && t.kind !== 'captions') return;
+      label = t.label || t.language;
+      if (label && !seen[label]) { opts.push({ kind: 'embedded', index: 0, label: label }); seen[label] = true; }
+    });
+  }
+  (state.playInfo.subtitles || []).forEach(function (s, ix) {
+    label = seen[s.label] ? s.label + ' (файл)' : s.label;
+    if (!seen[label]) { opts.push({ kind: 'external', index: ix, label: label }); seen[label] = true; }
+  });
+  return opts;
+}
+
+/* TextTrack-объекты внешних <track>-элементов: по индексу в video.textTracks
+   их искать нельзя — hls.js подмешивает туда свои встроенные дорожки */
+function externalTextTracks() {
+  var res = [];
+  Array.prototype.forEach.call(playerVideo().querySelectorAll('track'), function (n) {
+    if (n.track) res.push(n.track);
+  });
+  return res;
+}
+
+/* Применить выбор субтитров: встроенные дорожки ведём через API hls.js
+   (прямое присвоение mode он переприменяет сам), внешние — через mode */
+function applySubChoice(value) {
+  state.subs = value;
+  var choice = null;
+  subtitleOptions().forEach(function (o) { if (o.label === value) choice = o; });
+  var video = playerVideo();
+  var ext = externalTextTracks();
+  ext.forEach(function (t) { t.mode = 'hidden'; });
+  if (state.hls) {
+    if (choice && choice.kind === 'embedded') {
+      state.hls.subtitleDisplay = true;
+      state.hls.subtitleTrack = choice.index;
+    } else {
+      state.hls.subtitleDisplay = false;
+      state.hls.subtitleTrack = -1;
+    }
+  } else {
+    Array.prototype.forEach.call(video.textTracks, function (t) {
+      if (ext.indexOf(t) >= 0) return;
+      t.mode = (choice && choice.kind === 'embedded' && t.label === value) ? 'showing' : 'hidden';
+    });
+  }
+  if (choice && choice.kind === 'external' && ext[choice.index]) {
+    ext[choice.index].mode = 'showing';
+  }
+  saveTrackPref('subs', value);
+}
+
+/* Восстановление сохранённого выбора дорожек: списки аудио и встроенных
+   субтитров доступны только после разбора манифеста */
+function restoreTracks() {
+  var audio = trackPref('audio');
+  if (audio && state.hls && state.hls.audioTracks) {
+    for (var i = 0; i < state.hls.audioTracks.length; i++) {
+      if ((state.hls.audioTracks[i].name || '') === audio) { state.hls.audioTrack = i; break; }
+    }
+  }
+  var subs = trackPref('subs');
+  if (!subs) return;
+  var known = false;
+  subtitleOptions().forEach(function (o) { if (o.label === subs) known = true; });
+  if (known) applySubChoice(subs);
+  else state.subs = 'Выкл';
+}
+
+function restoreOnMeta(video) {
+  var onMeta = function () {
+    video.removeEventListener('loadedmetadata', onMeta);
+    restoreTracks();
+  };
+  video.addEventListener('loadedmetadata', onMeta);
+}
+
 function popupConfig(kind) {
   if (kind === 'subs') {
-    var items = ['Выкл'].concat((state.playInfo.subtitles || []).map(function (t) { return t.label; }));
+    var items = subtitleOptions().map(function (o) { return o.label; });
     return { title: 'Субтитры', items: items, current: state.subs };
   }
   if (kind === 'audio') {
@@ -803,16 +923,12 @@ function selectPopup(i) {
   var cfg = popupConfig(kind);
   var value = cfg.items[i];
   if (kind === 'subs') {
-    state.subs = value;
-    var video = playerVideo();
-    Array.prototype.forEach.call(video.textTracks, function (track, ix) {
-      var label = (state.playInfo.subtitles[ix] || {}).label;
-      track.mode = (label === value) ? 'showing' : 'hidden';
-    });
+    applySubChoice(value);
     toast('Субтитры: ' + value);
   } else if (kind === 'audio') {
     if (state.hls && state.hls.audioTracks && state.hls.audioTracks.length) {
       state.hls.audioTrack = i;
+      saveTrackPref('audio', value);
       toast('Аудиодорожка: ' + value);
     } else {
       toast('Переключение недоступно на этом устройстве');
@@ -973,11 +1089,15 @@ function startPlayback(info) {
   if (window.Hls && Hls.isSupported()) {
     var hls = new Hls();
     state.hls = hls;
+    /* иначе hls.js сам включает дорожку с DEFAULT=YES из манифеста, и
+       субтитры появляются вопреки «Выкл» в меню */
+    hls.subtitleDisplay = false;
     hls.on(Hls.Events.ERROR, function (e, d) {
       if (!d || !d.fatal) return;
       try { hls.destroy(); } catch (err) {}
       state.hls = null;
       video.src = info.url;
+      restoreOnMeta(video);
       var p = video.play();
       if (p && p.catch) { p.catch(function () {}); }
       toast('Включён режим совместимости — выбор качества и дорожек недоступен');
@@ -990,10 +1110,12 @@ function startPlayback(info) {
         hls.currentLevel = ix;
         state.qualityH = hls.levels[ix].height || null;
       }
+      restoreTracks();
       updateControlLabels();
     });
   } else {
     video.src = info.url;
+    restoreOnMeta(video);
   }
 
   buildPlayer();
@@ -1286,8 +1408,28 @@ function goBack() {
 
 var SECTION_RENDERED = {};
 
+/* раздел меню -> экран, который он открывает */
+var SECTION_SCREENS = {
+  home: 'home', movies: 'catalog', serials: 'catalog', cartoons: 'section',
+  collections: 'collections', search: 'search', bookmarks: 'bookmarks',
+  history: 'history', settings: 'settings',
+};
+
+/* Навигация через меню всегда открывает раздел сначала: фокус — на первую
+   строку контента, прокрутка — наверх. Иначе экран открывался с тем фокусом
+   и скроллом, с каким его покидали (вплоть до фокуса, застрявшего в самом
+   меню): позиция береглась для возврата Back, а не для смены раздела */
+function resetScreenTop(id) {
+  var name = SECTION_SCREENS[id];
+  if (!name) return;
+  FOCUS[name] = { r: 1, c: 0 };
+  var content = document.getElementById(SCREEN_CONTENT[name]);
+  if (content) content.style.transform = 'translateY(0)';
+}
+
 function openSection(id) {
   state.section = id;
+  resetScreenTop(id);
   if (id === 'home') return openHome();
   if (id === 'movies' || id === 'serials') return openCatalog(id === 'movies' ? 'movie' : 'serial');
   if (id === 'cartoons') return openCartoons();
@@ -1455,6 +1597,7 @@ var sectionToken = 0;
 
 function openSectionGrid(title, url, homeBack) {
   var token = ++sectionToken;
+  FOCUS.section = { r: 1, c: 0 };
   state.sectionUrl = url;
   state.sectionPage = 0;
   state.sectionHasMore = true;
@@ -1465,6 +1608,7 @@ function openSectionGrid(title, url, homeBack) {
 
   var c = $('#section-content');
   c.innerHTML = '';
+  c.style.transform = 'translateY(0)';
   ROWS.section = [topRow()];
   c.appendChild(el('div', 'page-head', '<h1>' + esc(title) + '</h1>'));
   state.sectionGrid = el('div', 'grid');
