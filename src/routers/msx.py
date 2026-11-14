@@ -30,7 +30,7 @@ LOGO_PATH = Path(__file__).resolve().parent.parent / 'assets' / 'msx' / 'logo.sv
 async def start():
     return {
         'name': 'KPTV',
-        'version': '1.0.1',
+        'version': '1.0.2',
         'parameter': f'content:{server.base_url}/msx/start.json',
         'action': '[settings:validate_links:0|home]',
         'preselect': True,

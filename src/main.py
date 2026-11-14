@@ -32,7 +32,7 @@ async def lifespan(
         await proxy_service.close_session()
 
 
-app = FastAPI(title='KPTV', version='1.0.1', lifespan=lifespan)
+app = FastAPI(title='KPTV', version='1.0.2', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],

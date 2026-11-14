@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.0.1-e8b339)
+![Version](https://img.shields.io/badge/version-1.0.2-e8b339)
 
 [Quick Start](#quick-start) •
 [Connecting a TV](#connecting-a-tv) •
