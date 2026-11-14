@@ -786,25 +786,27 @@ function saveTrackPref(kind, value) {
    /play. Лейблы внешних файлов намеренно дублируют стиль манифеста
    («RUS #01»), совпадения переименовываем с пометкой «(файл)» */
 function subtitleOptions() {
-  var opts = [{ kind: 'off', label: 'Выкл' }];
+  var opts = [{ kind: 'off', label: 'Выкл', lang: null }];
   var seen = { 'Выкл': true };
-  var i, label;
+  var i, label, lang;
   if (state.hls) {
     var list = state.hls.subtitleTracks || [];
     for (i = 0; i < list.length; i++) {
       label = list[i].name || ('Субтитры ' + (i + 1));
-      if (!seen[label]) { opts.push({ kind: 'embedded', index: i, label: label }); seen[label] = true; }
+      lang = list[i].lang || null;
+      if (!seen[label]) { opts.push({ kind: 'embedded', index: i, label: label, lang: lang }); seen[label] = true; }
     }
   } else {
     Array.prototype.forEach.call(playerVideo().textTracks, function (t) {
       if (t.kind !== 'subtitles' && t.kind !== 'captions') return;
       label = t.label || t.language;
-      if (label && !seen[label]) { opts.push({ kind: 'embedded', index: 0, label: label }); seen[label] = true; }
+      lang = t.language || null;
+      if (label && !seen[label]) { opts.push({ kind: 'embedded', index: 0, label: label, lang: lang }); seen[label] = true; }
     });
   }
   (state.playInfo.subtitles || []).forEach(function (s, ix) {
     label = seen[s.label] ? s.label + ' (файл)' : s.label;
-    if (!seen[label]) { opts.push({ kind: 'external', index: ix, label: label }); seen[label] = true; }
+    if (!seen[label]) { opts.push({ kind: 'external', index: ix, label: label, lang: s.lang || null }); seen[label] = true; }
   });
   return opts;
 }
@@ -873,17 +875,80 @@ function restoreOnMeta(video) {
   video.addEventListener('loadedmetadata', onMeta);
 }
 
+/* Имена языков для группировки дорожек (ISO-639-1 и -2, как приходят от
+   манифеста и от API). Неизвестный код показываем как есть, без кода — «Другие» */
+var LANG_NAMES = {
+  ru: 'Русский', rus: 'Русский', en: 'Английский', eng: 'Английский',
+  uk: 'Украинский', ukr: 'Украинский', be: 'Белорусский', bel: 'Белорусский',
+  kk: 'Казахский', kaz: 'Казахский', zh: 'Китайский', chi: 'Китайский',
+  ja: 'Японский', jpn: 'Японский', ko: 'Корейский', kor: 'Корейский',
+  de: 'Немецкий', ger: 'Немецкий', deu: 'Немецкий', fr: 'Французский', fre: 'Французский',
+  es: 'Испанский', spa: 'Испанский', it: 'Итальянский', ita: 'Итальянский',
+  pt: 'Португальский', por: 'Португальский', pl: 'Польский', pol: 'Польский',
+  tr: 'Турецкий', tur: 'Турецкий', ar: 'Арабский', ara: 'Арабский',
+  hi: 'Хинди', hin: 'Хинди', th: 'Тайский', tha: 'Тайский',
+  vi: 'Вьетнамский', vie: 'Вьетнамский', cs: 'Чешский', cze: 'Чешский',
+  bg: 'Болгарский', bul: 'Болгарский', hu: 'Венгерский', hun: 'Венгерский',
+  nl: 'Голландский', dut: 'Голландский', sv: 'Шведский', swe: 'Шведский',
+  da: 'Датский', dan: 'Датский', fi: 'Финский', fin: 'Финский',
+  no: 'Норвежский', nor: 'Норвежский', ro: 'Румынский', rum: 'Румынский',
+  el: 'Греческий', ell: 'Греческий', gre: 'Греческий',
+  he: 'Иврит', heb: 'Иврит', id: 'Индонезийский', ind: 'Индонезийский',
+  ms: 'Малайский', may: 'Малайский', fa: 'Персидский', per: 'Персидский',
+  et: 'Эстонский', est: 'Эстонский', lv: 'Латышский', lav: 'Латышский',
+  lt: 'Литовский', lit: 'Литовский', sr: 'Сербский', srp: 'Сербский',
+  hr: 'Хорватский', hrv: 'Хорватский', sl: 'Словенский', slv: 'Словенский',
+  sk: 'Словацкий', slo: 'Словацкий', sq: 'Албанский', sqi: 'Албанский',
+  hy: 'Армянский', arm: 'Армянский', az: 'Азербайджанский', aze: 'Азербайджанский',
+  ka: 'Грузинский', geo: 'Грузинский', uz: 'Узбекский', uzb: 'Узбекский',
+  tg: 'Таджикский', tgk: 'Таджикский', mn: 'Монгольский', mon: 'Монгольский'
+};
+
+function langName(code) {
+  if (!code) return 'Другие';
+  var key = String(code).toLowerCase();
+  return LANG_NAMES[key] || String(code).toUpperCase();
+}
+
+/* Группировка пунктов попапа по языку (как в официальном плеере KinoPub).
+   Пункты сохраняют исходный порядок — data-i и индексы дорожек не сбиваются,
+   между группами вставляются неселективные заголовки. Пункты без языка
+   («Выкл») выводятся первыми без заголовка; одна группа — без заголовков */
+function groupRows(items, langs) {
+  var flat = [];
+  var groups = {}, order = [];
+  items.forEach(function (label, i) {
+    var row = { label: label, i: i };
+    if (!langs[i]) { flat.push(row); return; }
+    var g = langName(langs[i]);
+    if (!groups[g]) { groups[g] = []; order.push(g); }
+    groups[g].push(row);
+  });
+  if (!order.length || order.length === 1 && !flat.length) {
+    return flat.concat(order.length ? groups[order[0]] : []);
+  }
+  var rows = flat.slice();
+  order.forEach(function (g) {
+    rows.push({ head: g });
+    rows = rows.concat(groups[g]);
+  });
+  return rows;
+}
+
 function popupConfig(kind) {
   if (kind === 'subs') {
-    var items = subtitleOptions().map(function (o) { return o.label; });
-    return { title: 'Субтитры', items: items, current: state.subs };
+    var opts = subtitleOptions();
+    var items = opts.map(function (o) { return o.label; });
+    var langs = opts.map(function (o) { return o.lang; });
+    return { title: 'Субтитры', items: items, current: state.subs, rows: groupRows(items, langs) };
   }
   if (kind === 'audio') {
     var tracks = state.hls && state.hls.audioTracks ? state.hls.audioTracks : [];
     if (!tracks.length) return { title: 'Аудиодорожка', items: ['По умолчанию'], current: 'По умолчанию' };
     var names = tracks.map(function (tr, i) { return tr.name || ('Дорожка ' + (i + 1)); });
+    var langsA = tracks.map(function (tr) { return tr.lang || null; });
     var cur = tracks[state.hls.audioTrack] ? (tracks[state.hls.audioTrack].name || names[state.hls.audioTrack]) : names[0];
-    return { title: 'Аудиодорожка', items: names, current: cur };
+    return { title: 'Аудиодорожка', items: names, current: cur, rows: groupRows(names, langsA) };
   }
   if (kind === 'quality') {
     if (!state.hls || !state.hls.levels || !state.hls.levels.length) {
@@ -910,11 +975,18 @@ function openPopup(kind) {
 function renderPopup() {
   var cfg = popupConfig(state.popup);
   if (!cfg) return;
+  var rows = cfg.rows || cfg.items.map(function (label, i) { return { label: label, i: i }; });
   var p = $('#player-popup');
-  p.innerHTML = '<div class="popup-title">' + esc(cfg.title) + '</div>' + cfg.items.map(function (it, i) {
-    return '<div class="popup-item' + (cfg.current === it ? ' sel' : '') + (i === state.popupIdx ? ' cur' : '') + '" data-i="' + i + '">' +
-      esc(it) + (cfg.current === it ? ' ✓' : '') + '</div>';
-  }).join('');
+  p.innerHTML = '<div class="popup-title">' + esc(cfg.title) + '</div>' +
+    '<div class="popup-scroll">' + rows.map(function (r) {
+      if (r.head !== undefined) return '<div class="popup-head">' + esc(r.head) + '</div>';
+      return '<div class="popup-item' + (cfg.current === r.label ? ' sel' : '') + (r.i === state.popupIdx ? ' cur' : '') + '" data-i="' + r.i + '">' +
+        esc(r.label) + (cfg.current === r.label ? ' ✓' : '') + '</div>';
+    }).join('') + '</div>';
+  // список может не влезать в экран — держим текущий пункт в видимой зоне
+  var sc = p.querySelector('.popup-scroll');
+  var cur = sc.querySelector('.popup-item.cur');
+  if (cur) sc.scrollTop = cur.offsetTop - (sc.clientHeight - cur.offsetHeight) / 2;
   p.classList.remove('hidden');
 }
 

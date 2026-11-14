@@ -685,6 +685,9 @@ html, body {
 #player-popup {
   position: absolute; right: 72px; bottom: 190px; z-index: 30;
   width: 360px;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
   background: rgba(16,18,24,.97);
   border: 1px solid rgba(255,255,255,.12);
   border-radius: 16px;
@@ -697,6 +700,14 @@ html, body {
   color: var(--muted);
   padding: 8px 14px 12px;
   text-transform: uppercase;
+  flex: none;
+}
+
+/* длинные списки (много дорожек) прокручиваются внутри попапа */
+.popup-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .popup-item {
@@ -708,6 +719,17 @@ html, body {
 }
 .popup-item.cur { background: rgba(255,255,255,.14); }
 .popup-item.sel { color: var(--accent); font-weight: 700; }
+
+/* заголовок языковой группы в попапе дорожек; sticky держит его видимым
+   при прокрутке длинного списка (Chromium >= 56; старее — просто уезжает) */
+.popup-head {
+  position: sticky; top: 0;
+  background: rgba(16,18,24,.97);
+  font-size: 14px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 16px 4px;
+}
 
 /* ---------- Модал выбора папки закладок ---------- */
 
