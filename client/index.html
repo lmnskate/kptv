@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<title>KPTV — KinoPub для Smart TV</title>
+<link rel="stylesheet" href="css/client.css?v=46">
+<!-- hls.min.js грузится лениво из app.js при первом воспроизведении -->
+</head>
+<body>
+<div id="stage">
+
+  <!-- Общий «хром» браузерных экранов: боковое меню -->
+  <header id="topnav"></header>
+
+  <!-- Экран: активация устройства -->
+  <section id="screen-register" class="screen hidden">
+    <div class="register-wrap">
+      <div class="register-main">
+        <div class="register-logo"><b>KPTV</b></div>
+        <div class="register-title">Подключение устройства</div>
+        <div class="register-steps">
+          <div class="reg-step"><span>1</span>Откройте kino.pub на телефоне или компьютере</div>
+          <div class="reg-step"><span>2</span>Зайдите в «Мои устройства» → «Добавить устройство»</div>
+          <div class="reg-step"><span>3</span>Введите код ниже или отсканируйте QR-код</div>
+        </div>
+        <div id="register-code" class="register-code">·····</div>
+        <div id="register-hint" class="register-hint">Ожидаем подключения…</div>
+        <div id="register-retry" class="btn focusable hidden">Повторить</div>
+      </div>
+      <div class="register-aside">
+        <div class="register-qr-card">
+          <img id="register-qr" class="register-qr hidden" alt="" />
+        </div>
+        <div class="register-qr-cap">Наведите камеру телефона</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Экран: Главная -->
+  <section id="screen-home" class="screen hidden">
+    <div id="home-scroll"><div id="home-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Каталог (Фильмы/Сериалы) -->
+  <section id="screen-catalog" class="screen hidden">
+    <div class="screen-scroll"><div id="catalog-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: сетка раздела («Смотреть все») -->
+  <section id="screen-section" class="screen hidden">
+    <div class="screen-scroll"><div id="section-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Подборки -->
+  <section id="screen-collections" class="screen hidden">
+    <div class="screen-scroll"><div id="collections-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Поиск -->
+  <section id="screen-search" class="screen hidden">
+    <div class="screen-scroll"><div id="search-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Закладки -->
+  <section id="screen-bookmarks" class="screen hidden">
+    <div class="screen-scroll"><div id="bookmarks-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: История -->
+  <section id="screen-history" class="screen hidden">
+    <div class="screen-scroll"><div id="history-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Настройки -->
+  <section id="screen-settings" class="screen hidden">
+    <div class="screen-scroll"><div id="settings-content" class="scroll-content"></div></div>
+  </section>
+
+  <!-- Экран: Карточка контента -->
+  <section id="screen-detail" class="screen hidden"></section>
+
+  <!-- Экран: Плеер -->
+  <section id="screen-player" class="screen hidden">
+    <div id="player-video"><video id="pv-video"></video></div>
+    <div id="player-paused" class="hidden"><svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></div>
+    <div id="player-overlay">
+      <div class="player-top">
+        <div>
+          <div id="pv-title"></div>
+          <div id="pv-ep"></div>
+        </div>
+      </div>
+      <div class="player-bottom">
+        <div class="player-progress">
+          <div id="pp-track" class="focusable"><div id="pp-fill"></div></div>
+          <div class="pp-times"><span id="pp-cur">0:00</span><span id="pp-total">0:00</span></div>
+        </div>
+        <div id="player-controls"></div>
+      </div>
+    </div>
+    <div id="player-popup" class="hidden"></div>
+  </section>
+
+  <div id="toast" class="hidden"></div>
+  <div id="modal" class="hidden"><div id="modal-box"></div></div>
+</div>
+<script src="js/api.js?v=22"></script>
+<script src="js/app.js?v=52"></script>
+</body>
+</html>

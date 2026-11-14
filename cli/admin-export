@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# usage: export <file> — dump the device database (incl. tokens) to <file>
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+target="${1:-}"
+if [ -z "$target" ]; then
+    echo "Usage: ./kptv.sh admin export <file>" >&2
+    exit 1
+fi
+
+mkdir -p backups
+tmp="kp-sqlite-export-$(date +%Y%m%d-%H%M%S).db"
+
+if compose ps --status running --services 2>/dev/null | grep -qx server; then
+    # A live DB must not be copied raw — use SQLite's online backup API
+    compose exec -T server python -c "
+import sqlite3
+source = sqlite3.connect('/data/kp-sqlite.db')
+target = sqlite3.connect('/backups/$tmp')
+source.backup(target)
+target.close()
+source.close()
+"
+elif [ -f data/kp-sqlite.db ]; then
+    cp data/kp-sqlite.db "backups/$tmp"
+else
+    die "no database found to export."
+fi
+
+cp "backups/$tmp" "$target"
+echo "Devices exported: $target"
+echo "Keep this file private — it holds every device's KinoPub tokens."

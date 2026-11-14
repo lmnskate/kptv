@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# usage: list — list registered devices as a table
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+check_running
+compose exec -T server python -c "$ADMIN_PY"

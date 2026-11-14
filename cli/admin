@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# usage: admin — device management (list, export, import)
+set -euo pipefail
+
+CONTEXT=admin
+DESCRIPTION="Device management: registered TVs, their KinoPub tokens and settings."
+
+source "$(dirname "${BASH_SOURCE[0]}")/_context.sh"

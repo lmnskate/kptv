@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# usage: import <file> — replace the device database with <file> (restarts the stack)
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+source_file="${1:-}"
+if [ -z "$source_file" ]; then
+    echo "Usage: ./kptv.sh admin import <file>" >&2
+    exit 1
+fi
+if [ ! -f "$source_file" ]; then
+    die "file not found: $source_file"
+fi
+
+ensure_mount_dirs
+compose down
+cp "$source_file" data/kp-sqlite.db
+compose up -d
+echo "Devices imported, stack restarted. Check the logs:  docker compose logs -f server"
