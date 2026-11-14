@@ -12,7 +12,14 @@ KP_SETTING_KEYS = {
 
 class Device:
     """A client device (TV/browser): identity, OAuth tokens, settings and a
-    KinoPub API client. Backed by the `devices` SQLite table."""
+    KinoPub API client. Backed by the `devices` SQLite table.
+
+    Instances are cached by id: every HTTP request used to build a fresh
+    Device (and a fresh aiohttp session), paying a TLS handshake per API
+    call. The cache keeps the session for reuse; the mutators below update
+    the instance in place so the cached copy never goes stale."""
+
+    _cache: dict = {}
 
     def __init__(
         self,
@@ -40,11 +47,26 @@ class Device:
         cls,
         device_id
     ):
+        cached = cls._cache.get(device_id)
+        if cached is not None:
+            return cached
+
         entry = storage.get_device_by_id(device_id)
         if entry is None:
             return None
 
-        return cls(entry)
+        device = cls(entry)
+        cls._cache[device_id] = device
+
+        return device
+
+    @classmethod
+    async def close_all_sessions(
+        cls
+    ):
+        for device in list(cls._cache.values()):
+            await device.kp.close_session()
+        cls._cache.clear()
 
     @classmethod
     def create(
@@ -55,12 +77,16 @@ class Device:
         if entry is None:
             entry = storage.get_device_by_id(device_id)
 
-        return cls(entry)
+        device = cls(entry)
+        cls._cache[device_id] = device
+
+        return device
 
     def update_code(
         self,
         code
     ):
+        self.code = code
         storage.update_device_code(
             self.id,
             code
@@ -136,6 +162,7 @@ class Device:
         self,
         user_agent
     ):
+        self.user_agent = user_agent
         storage.update_device_user_agent(
             self.id,
             user_agent

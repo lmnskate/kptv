@@ -29,11 +29,18 @@ async def _match_hevc_upstream(
     hevc
 ):
     """KinoPub generates HEVC or AVC manifests based on the device capability
-    flag, so align it with what the client browser can actually decode."""
+    flag, so align it with what the client browser can actually decode.
+    The new value is persisted locally too: the in-process memo only skips
+    the upstream POST, it must not be the only place the flag lives."""
     if _hevc_synced.get(current.id) == hevc:
         return
 
+    # The memo is per-process; guard against unbounded growth if ids churn.
+    if len(_hevc_synced) > 256:
+        _hevc_synced.clear()
+
     current.settings.hevc = hevc
+    current.update_settings()
     await current.sync_settings_to_kp(['hevc'])
     _hevc_synced[current.id] = hevc
 

@@ -54,7 +54,8 @@ class KinoPub:
         path,
         params=None,
         method='GET',
-        retried=False
+        retried=False,
+        attempts=0
     ):
         if not self.token:
             # Registration needed (or a concurrent request already found the
@@ -111,9 +112,27 @@ class KinoPub:
                     return None
         except asyncio.TimeoutError:
             logger.warning('Timeout while requesting %s', url)
+            if attempts < 1:
+                return await self.api(
+                    path,
+                    params=params,
+                    method=method,
+                    retried=retried,
+                    attempts=attempts + 1
+                )
+
             return None
         except aiohttp.ClientError as e:
             logger.warning('HTTP client error while requesting %s: %s', url, e)
+            if attempts < 1:
+                return await self.api(
+                    path,
+                    params=params,
+                    method=method,
+                    retried=retried,
+                    attempts=attempts + 1
+                )
+
             return None
         except Exception:
             logger.exception('Unexpected error while requesting %s', url)
@@ -258,6 +277,10 @@ class KinoPub:
                         )
                         self.token = None
                         self.refresh = None
+                        cached = Device._cache.get(self.device_id)
+                        if cached is not None:
+                            cached.token = None
+                            cached.refresh = None
                         await self.close_session()
 
                         return False
@@ -269,6 +292,10 @@ class KinoPub:
                     )
                     self.token = result['access_token']
                     self.refresh = result['refresh_token']
+                    cached = Device._cache.get(self.device_id)
+                    if cached is not None:
+                        cached.token = self.token
+                        cached.refresh = self.refresh
 
                     await self.close_session()
 

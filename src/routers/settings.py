@@ -3,7 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+import config.globals as g
 from devices.device import KP_SETTING_KEYS
+from routers.browse import invalidate_home_cache
 from routers.deps import error, registered
 
 router = APIRouter(
@@ -32,6 +34,8 @@ async def settings_get(
     return {
         'settings': current.settings.to_dict(),
         'account': (account or {}).get('user'),
+        # Shown in the client settings screen (about line).
+        'version': g.APP_VERSION,
     }
 
 
@@ -55,6 +59,8 @@ async def settings_update(
         current.settings.poster_size = patch.poster_size
 
     current.update_settings()
+    # Poster size changes the shaped cards of the cached /home payload.
+    invalidate_home_cache(current.id)
 
     if changed_kp:
         await current.sync_settings_to_kp(changed_kp)

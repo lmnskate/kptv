@@ -26,6 +26,8 @@ class ServerSettings(BaseSettings):
     bind_port: int | None = None
     workers: int = 1
     proxy_headers: bool = False
+    # Swagger UI / OpenAPI on an internet-facing deployment: off by default.
+    docs: bool = False
 
     @property
     def base_url(

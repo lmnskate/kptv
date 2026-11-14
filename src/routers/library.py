@@ -100,11 +100,13 @@ async def bookmark_folder_create(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    await current.kp.api(
+    result = await current.kp.api(
         '/bookmarks/create',
         {'title': body.title},
         method='POST'
     )
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     return {'ok': True}
 
@@ -118,7 +120,7 @@ async def bookmark_toggle(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    await current.kp.api(
+    result = await current.kp.api(
         '/bookmarks/toggle-item',
         {
             'item': body.item,
@@ -126,11 +128,15 @@ async def bookmark_toggle(
         },
         method='POST'
     )
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     result = await current.kp.api(
         '/bookmarks/get-item-folders',
         params={'item': body.item}
     )
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     return {
         'ok': True,
@@ -353,7 +359,9 @@ async def history_clear(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    await current.kp.api('/watching/clearhistory', method='POST')
+    result = await current.kp.api('/watching/clearhistory', method='POST')
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     return {'ok': True}
 
@@ -374,7 +382,9 @@ async def watched_toggle(
     if body.episode is not None:
         params['video'] = body.episode
 
-    await current.kp.api('/watching/toggle', params)
+    result = await current.kp.api('/watching/toggle', params)
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     return {'ok': True}
 
@@ -389,9 +399,11 @@ async def subscription_toggle(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    await current.kp.api(
+    result = await current.kp.api(
         '/watching/togglewatchlist',
         {'id': body.id}
     )
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
     return {'ok': True}

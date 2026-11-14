@@ -54,12 +54,19 @@
     }
 
     function api(path, options) {
-        options = options || {};
+        return apiAttempt(path, options || {}, 0);
+    }
+
+    /* GET-запросы повторяем один раз после сетевого сбоя/таймаута: ТВ-сети
+       роняют соединения, и без повтора экран оставался бы на ошибке.
+       HTTP-ответы с кодом ошибки не повторяем — это ответ сервера, а не сбой. */
+    function apiAttempt(path, options, attempt) {
         return new Promise(function (resolve, reject) {
             var xhr = new XMLHttpRequest();
             /* cache-buster: ТВ-вебвью (Tizen/MSX) агрессивно кэширует GET
                и потом вечно отдаёт протухшие ответы (401/410) из кэша */
             var url = '/api/v1' + path + (path.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+            var isGet = !options.method || options.method === 'GET';
             xhr.open(options.method || 'GET', url, true);
             xhr.setRequestHeader('X-Device-Id', deviceId);
             if (options.body !== undefined) {
@@ -69,6 +76,10 @@
                экран остаётся на «Загрузка…» навсегда */
             xhr.timeout = 25000;
             xhr.ontimeout = function () {
+                if (isGet && attempt === 0) {
+                    resolve(apiAttempt(path, options, 1));
+                    return;
+                }
                 reject(new Error('Превышено время ожидания'));
             };
             xhr.onreadystatechange = function () {
@@ -93,6 +104,10 @@
                 reject(error);
             };
             xhr.onerror = function () {
+                if (isGet && attempt === 0) {
+                    resolve(apiAttempt(path, options, 1));
+                    return;
+                }
                 reject(new Error('Ошибка сети'));
             };
             xhr.send(options.body !== undefined ? JSON.stringify(options.body) : null);

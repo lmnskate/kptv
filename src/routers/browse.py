@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -11,6 +12,33 @@ router = APIRouter(
     prefix='/api/v1',
     tags=['browse']
 )
+
+# /home fans out to ~9 upstream endpoints plus one enrichment request per
+# «continue» item — expensive enough to cache briefly per device (the rails
+# barely change within a minute). Invalidated on settings changes, which are
+# the only user action that alters the shaped payload (poster sizes).
+_HOME_CACHE_TTL = 30
+_home_cache: dict = {}
+
+
+def _prune_home_cache(
+    now
+):
+    if len(_home_cache) <= 128:
+        return
+    stale = [
+        key for key, (cached_at, *_)
+        in _home_cache.items()
+        if now - cached_at >= _HOME_CACHE_TTL
+    ]
+    for key in stale:
+        del _home_cache[key]
+
+
+def invalidate_home_cache(
+    device_id
+):
+    _home_cache.pop(device_id, None)
 
 
 async def _enrich(
@@ -62,6 +90,11 @@ async def home(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
+    now = time.monotonic()
+    cached = _home_cache.get(current.id)
+    if cached is not None and now - cached[0] < _HOME_CACHE_TTL:
+        return cached[1]
+
     kp = current.kp
 
     # /items/fresh and /items/popular require the mandatory `type` parameter,
@@ -79,9 +112,11 @@ async def home(
         kp.api('/watching/serials', params={'subscribed': 1})
     )
 
+    # The rail shows at most a screenful of cards — enriching more shallow
+    # /watching entries than that is pure upstream load.
     continue_items = await _enrich(
         kp,
-        (movies or {}).get('items', []) + (serials or {}).get('items', [])
+        ((movies or {}).get('items', []) + (serials or {}).get('items', []))[:12]
     )
     fresh = (fresh_movies or {}).get('items', []) + (fresh_serials or {}).get('items', [])
     popular = (popular_movies or {}).get('items', []) + (popular_serials or {}).get('items', [])
@@ -121,7 +156,11 @@ async def home(
             'items': [vm.card(i, settings) for i in subscribed_items]
         })
 
-    return {'rails': rails}
+    payload = {'rails': rails}
+    _prune_home_cache(now)
+    _home_cache[current.id] = (now, payload)
+
+    return payload
 
 
 @router.get('/catalog')

@@ -14,8 +14,18 @@ from devices import storage
 logger = logging.getLogger(__name__)
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+    # Media responses must pass through byte-identical: aiohttp transparently
+    # decompresses gzip/deflate, which would desync the copied Content-Length
+    # header and hang the client mid-stream.
+    'Accept-Encoding': 'identity'
 }
+
+# Redirects are followed manually (never by aiohttp) so every hop is
+# re-validated against the domain allowlist — otherwise a remembered CDN
+# domain could bounce the proxy into the server's internal network.
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+MAX_REDIRECTS = 3
 
 CLIENT_TIMEOUT = aiohttp.ClientTimeout(
     connect=5,
@@ -166,11 +176,23 @@ async def _fetch(
     for attempt in range(max_retries + 1):
         try:
             session = await get_session()
-            response = await session.request(
-                method,
-                url,
-                headers=headers
-            )
+            current = url
+            response = None
+            for redirect in range(MAX_REDIRECTS + 1):
+                response = await session.request(
+                    method,
+                    current,
+                    headers=headers,
+                    allow_redirects=False
+                )
+                if response.status not in REDIRECT_STATUSES:
+                    break
+                location = response.headers.get('Location')
+                await response.release()
+                if not location or redirect == MAX_REDIRECTS:
+                    return response
+                current = urljoin(current, location)
+                check_url(current)
             if response.status >= 500 and attempt < max_retries:
                 await response.release()
                 continue
@@ -298,7 +320,10 @@ async def get(
     if client_headers and 'Range' in client_headers:
         request_headers['Range'] = client_headers['Range']
 
-    cache_key = (url, audio_name)
+    # The device id joins the key: rewritten playlists embed the requesting
+    # device's id into the segment URLs, so a cross-device cache hit would
+    # serve one device's credentials to another.
+    cache_key = (url, audio_name, current_device_id.get())
     if not request_headers:
         cached = _PLAYLIST_CACHE.get(cache_key)
         if cached is not None:
@@ -389,10 +414,24 @@ async def get_subtitle(
     url
 ):
     session = await get_session()
-    async with session.get(url) as response:
-        content = await response.read()
+    current = url
+    for redirect in range(MAX_REDIRECTS + 1):
+        async with session.get(
+            current,
+            allow_redirects=False
+        ) as response:
+            if response.status in REDIRECT_STATUSES and redirect < MAX_REDIRECTS:
+                location = response.headers.get('Location')
+                if not location:
+                    break
+                current = urljoin(current, location)
+                check_url(current)
+                continue
+            content = await response.read()
 
-        if response.status != 200:
-            return response.status, response.headers.get('content-type'), content
+            if response.status != 200:
+                return response.status, response.headers.get('content-type'), content
 
-        return response.status, 'text/vtt', srt_to_vtt(content)
+            return response.status, 'text/vtt', srt_to_vtt(content)
+
+    raise UnknownDomainError('Too many redirects')

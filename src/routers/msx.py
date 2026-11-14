@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+import config.globals as g
 from config.settings import server
 
 router = APIRouter(prefix='/msx', tags=['msx'])
@@ -30,7 +31,7 @@ LOGO_PATH = Path(__file__).resolve().parent.parent / 'assets' / 'msx' / 'logo.sv
 async def start():
     return {
         'name': 'KPTV',
-        'version': '1.0.3',
+        'version': g.APP_VERSION,
         'parameter': f'content:{server.base_url}/msx/start.json',
         'action': '[settings:validate_links:0|home]',
         'preselect': True,

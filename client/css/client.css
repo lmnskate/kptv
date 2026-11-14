@@ -942,7 +942,7 @@ html, body {
    браузерах отступы не удвоились. Grid gap не трогаем — он работает */
 #topnav, .track, .all-genre-art, .meta, .hero-btns, .detail-main, .d-btns,
 .tabs, #player-controls, .pbtn-transport, .pbtn-side, .pbtn, .modal-item,
-.query-bar, .kb, .kb-row, .set-profile { gap: 0; }
+.query-bar, .kb, .kb-row, .set-profile, .nf-query { gap: 0; }
 #topnav > * + *:not(.nav-list) { margin-top: 6px; }
 /* 26px + собственный margin-right:-6px у карточки = те же визуальные 20px,
    что давали gap:32px с двумя отрицательными маргинами */
@@ -960,6 +960,7 @@ html, body {
 .pbtn.pbtn-play > * + * { margin-left: 0; }
 .modal-item > * + * { margin-left: 14px; }
 .query-bar > * + * { margin-left: 14px; }
+.nf-query > * + * { margin-left: 10px; }
 .kb > * + * { margin-top: 12px; }
 .kb-row > * + * { margin-left: 12px; }
 .set-profile > * + * { margin-left: 30px; }
@@ -992,3 +993,86 @@ html, body {
   box-shadow: 0 0 0 3px rgba(255,255,255,.35), 0 0 20px rgba(255,255,255,.2);
 }
 #pp-track.focused #pp-fill::after { display: block; }
+
+/* ---------- Буферизация плеера ---------- */
+
+#player-buffering {
+  position: absolute; top: 50%; left: 50%;
+  width: 76px; height: 76px;
+  margin: -38px 0 0 -38px;
+  z-index: 6;
+}
+#player-buffering svg {
+  width: 76px; height: 76px;
+  animation: bufspin 1s linear infinite;
+}
+#player-buffering .buf-bg { stroke: rgba(255,255,255,.2); }
+#player-buffering .buf-arc { stroke: #fff; stroke-dasharray: 60 66; }
+@keyframes bufspin { to { transform: rotate(360deg); } }
+
+/* ---------- Автопереход к следующей серии ---------- */
+
+#player-autonext {
+  position: absolute; right: 72px; bottom: 190px; z-index: 30;
+  background: rgba(16,18,24,.97);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  padding: 22px 26px;
+  box-shadow: 0 24px 70px rgba(0,0,0,.7);
+  text-align: right;
+}
+.an-line { font-size: 21px; margin-bottom: 14px; }
+.an-line b { color: var(--accent); }
+.an-btns { display: flex; justify-content: flex-end; }
+.an-btns > * + * { margin-left: 14px; }
+
+/* ---------- Скелетоны загрузки ---------- */
+
+.skel {
+  background: linear-gradient(100deg, rgba(255,255,255,.05) 40%, rgba(255,255,255,.11) 50%, rgba(255,255,255,.05) 60%);
+  background-size: 220% 100%;
+  animation: skel 1.6s linear infinite;
+  border-radius: 14px;
+}
+@keyframes skel { from { background-position: 110% 0; } to { background-position: -110% 0; } }
+/* на ТВ статичная подложка — слабый GPU не должен гонять градиенты */
+.tv .skel { animation: none; }
+.skel-hero { height: 660px; border-radius: 0; }
+.skel-line { width: 260px; height: 30px; margin-bottom: 18px; }
+.skel-card { width: 220px; height: 320px; flex: none; }
+
+/* ---------- Инлайн-ошибки с повтором ---------- */
+
+.retry-wrap { margin: 0 72px; }
+
+/* ---------- Иконки пустых состояний (SVG вместо эмодзи) ---------- */
+
+.es-icon { font-size: 0; color: var(--muted); }
+.es-icon svg { width: 72px; height: 72px; }
+
+/* ---------- Настройки: значение выбора и служебная строка ---------- */
+
+.set-val { flex: none; font-size: 24px; font-weight: 700; color: var(--muted); }
+.set-row.focused .set-val { color: var(--text); }
+.set-version { margin: 40px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
+
+/* ---------- Модал: создание папки и подтверждения ---------- */
+
+#modal-box.modal-wide { width: 980px; }
+.nf-query {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 24px;
+  min-height: 58px;
+  margin-bottom: 16px;
+}
+.nf-query #nf-text { font-weight: 600; word-break: break-all; }
+.nf-kb .kb-row, .nf-controls { justify-content: center; margin-top: 10px; }
+.kb-mini { width: 64px; height: 50px; font-size: 20px; }
+.kb-mini.wide { width: 108px; }
+.confirm-text { font-size: 20px; line-height: 1.45; color: #c8cdd6; padding: 4px 14px 20px; }
+.confirm-btns { display: flex; justify-content: flex-end; }
+.confirm-btns > * + * { margin-left: 14px; }

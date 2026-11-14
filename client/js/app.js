@@ -34,6 +34,21 @@ var GRADS = [
   ['#2c003e', '#907ad6'], ['#14213d', '#fca311'], ['#005f73', '#94d2bd'],
 ];
 
+/* Иконки пустых состояний — инлайн-SVG: эмодзи на старых ТВ-вебвью
+   (Tizen 2.4/4) рисуются «тофу»-квадратами */
+var EMPTY_ICONS = {
+  search: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>'
+};
+
+function emptyState(icon, title, sub) {
+  return el('div', 'empty-state',
+    '<div class="es-icon">' + EMPTY_ICONS[icon] + '</div>' +
+    '<div class="es-title">' + esc(title) + '</div>' +
+    (sub ? '<div class="es-sub">' + esc(sub) + '</div>' : ''));
+}
+
 var DB = { home: null, titles: new Map() };
 var NAV = [
   ['search', 'Поиск'], ['home', 'Главная'], ['movies', 'Фильмы'], ['serials', 'Сериалы'],
@@ -107,6 +122,9 @@ var state = {
   bookmarkFolder: null, // активная папка
   settings: null,
   catalogType: null,    // тип, чей контент сейчас в #catalog-content
+  autoNext: null,       // {s,e,left,cur,timer} — отсчёт автоперехода к след. серии
+  nf: null,             // состояние модала создания папки закладок
+  confirm: null,        // {title,text,okLabel,cur,onOk} — модал подтверждения
 };
 
 /* ----------------------------- Хелперы ---------------------------------- */
@@ -128,13 +146,30 @@ function grad(t, a) {
   return 'linear-gradient(' + (a == null ? 160 : a) + 'deg, ' + t.grad[0] + ', ' + t.grad[1] + ')';
 }
 
-/* wide=true — широкий бэкдроп (hero, «Продолжить просмотр», фон детальной
-   страницы); иначе — узкий постер: бэкдропы весят 1–6 МБ, и когда каждая
-   карточка в ленте грузит их, ТВ душится на декодировании */
-function bgArt(t, angle, wide) {
-  var url = wide ? (t.backdrop || t.poster) : (t.poster || t.backdrop);
-  if (!url) return grad(t, angle);
-  return 'url(&quot;' + esc(url) + '&quot;) center/cover, ' + grad(t, angle);
+/* data-bg/data-grad — ленивая подгрузка постеров: карточка рождается с
+   фолбэк-градиентом, а картинку выставляет hydrateVisible(), когда она
+   приближается к вьюпорту. Все постеры разом (40+ на главной) душат слабые
+   ТВ на сетевых запросах и декодировании. wide-бэкдропы (1–6 МБ) — только
+   hero/«Продолжить просмотр»/фон детальной: t.backdrop || t.poster */
+function artAttrs(url, gradCss) {
+  if (!url) return '';
+  return ' data-bg="' + esc(url) + '"' + (gradCss ? ' data-grad="' + esc(gradCss) + '"' : '');
+}
+
+function hydrateVisible() {
+  var vh = window.innerHeight || 1080;
+  var vw = window.innerWidth || 1920;
+  var els = document.querySelectorAll('[data-bg]');
+  for (var i = 0; i < els.length; i++) {
+    var e = els[i];
+    var r = e.getBoundingClientRect();
+    if (r.bottom < -vh * 0.6 || r.top > vh * 1.6 ||
+        r.right < -vw * 0.2 || r.left > vw * 1.2) continue;
+    var g2 = e.dataset.grad;
+    e.style.background = 'url("' + e.dataset.bg + '") center/cover' + (g2 ? ', ' + g2 : '');
+    e.removeAttribute('data-bg');
+    e.removeAttribute('data-grad');
+  }
 }
 
 function byId(id) { return DB.titles.get(Number(id)); }
@@ -166,6 +201,21 @@ function fmtTs(ts) {
   if (isNaN(d.getTime())) return '';
   function pad(x) { return (x < 10 ? '0' : '') + x; }
   return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear();
+}
+
+/* Тот же timestamp человеческим языком: «сегодня», «вчера», «N дн. назад» */
+function fmtRel(ts) {
+  var n = Number(ts);
+  if (!isFinite(n) || n <= 0) return '';
+  var d = new Date(n * 1000);
+  if (isNaN(d.getTime())) return '';
+  var now = new Date();
+  function dayStart(x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); }
+  var diff = Math.round((dayStart(now) - dayStart(d)) / 86400000);
+  if (diff <= 0) return 'сегодня';
+  if (diff === 1) return 'вчера';
+  if (diff < 7) return diff + ' дн. назад';
+  return fmtTs(ts);
 }
 
 function kpClass(kp) {
@@ -261,7 +311,7 @@ function posterCard(t) {
   c.dataset.kind = 'title';
   c.dataset.id = t.id;
   c.innerHTML =
-    '<div class="poster-art" style="background:' + bgArt(t) + '">' +
+    '<div class="poster-art" style="background:' + grad(t) + '"' + artAttrs(t.poster, grad(t)) + '>' +
     (t.q4k ? '<div class="badge4k">4K</div>' : '') +
     (t.newEpisodes ? '<div class="badge-new">' + t.newEpisodes + ' нов.</div>' : '') +
     '</div>' +
@@ -274,8 +324,9 @@ function continueCard(t) {
   var c = el('div', 'card focusable');
   c.dataset.kind = 'watch';
   c.dataset.id = t.id;
+  var g = grad(t, 140);
   c.innerHTML =
-    '<div class="cw-art" style="background:' + bgArt(t, 140, true) + '">' +
+    '<div class="cw-art" style="background:' + g + '"' + artAttrs(t.backdrop || t.poster, g) + '>' +
     '<div class="cw-shade"></div>' +
     '<div class="cw-play">▶</div>' +
     '<div class="cw-name">' + esc(t.name) + '</div>' +
@@ -291,7 +342,7 @@ function collectionCard(col) {
   c.dataset.id = col.id;
   c.dataset.name = col.title;
   c.innerHTML =
-    '<div class="col-art"' + (col.poster ? ' style="background-image:url(&quot;' + esc(col.poster) + '&quot;)"' : '') + '>' +
+    '<div class="col-art"' + artAttrs(col.poster, '') + '>' +
     '<div class="col-shade"></div>' +
     '<div class="col-name">' + esc(col.title) + '</div>' +
     '</div>';
@@ -381,9 +432,10 @@ function renderHome() {
 
   if (featured) {
     var f = featured;
+    var hg = grad(f, 115);
     var hero = el('section', 'hero vrow');
     hero.innerHTML =
-      '<div class="hero-bg" style="background:' + bgArt(f, 115, true) + '"></div>' +
+      '<div class="hero-bg" style="background:' + hg + '"' + artAttrs(f.backdrop || f.poster, hg) + '></div>' +
       '<div class="hero-fade"></div>' +
       '<div class="hero-info">' +
       '<div class="hero-tag">' + esc(typeLabel(f)) + '</div>' +
@@ -500,10 +552,11 @@ function rebuildRows(screen, keepFocus) {
 
 function epCard(t, e) {
   var c = el('div', 'card ep focusable');
+  var g = grad(t, 200);
   c.dataset.s = state.season;
   c.dataset.e = e.n - 1;
   c.innerHTML =
-    '<div class="ep-art"' + (e.thumbnail ? ' style="background-image:url(&quot;' + esc(e.thumbnail) + '&quot;)"' : ' style="background:' + grad(t, 200) + '"') + '>' +
+    '<div class="ep-art" style="background:' + g + '"' + artAttrs(e.thumbnail, g) + '>' +
     '<span class="ep-num">' + e.n + '</span>' +
     (e.watched ? '<span class="ep-done">✓</span>' : '') +
     '</div>' +
@@ -520,15 +573,17 @@ function epCard(t, e) {
 function renderDetail() {
   var t = state.title;
   var s = $('#screen-detail');
+  var dbg = grad(t, 120);
+  var dpg = grad(t);
   s.innerHTML =
-    '<div class="detail-backdrop" style="background:' + bgArt(t, 120, true) + '"></div>' +
+    '<div class="detail-backdrop" style="background:' + dbg + '"' + artAttrs(t.backdrop || t.poster, dbg) + '></div>' +
     '<div class="detail-fade"></div>' +
     '<div id="detail-scroll"><div id="detail-content" class="scroll-content"></div></div>';
   var c = $('#detail-content');
 
   var main = el('section', 'detail-main vrow');
   main.innerHTML =
-    '<div class="d-poster" style="background:' + bgArt(t) + '">' + (t.poster ? '' : '<div class="poster-name">' + esc(t.name) + '</div>') + '</div>' +
+    '<div class="d-poster" style="background:' + dpg + '"' + artAttrs(t.poster, dpg) + '>' + (t.poster ? '' : '<div class="poster-name">' + esc(t.name) + '</div>') + '</div>' +
     '<div class="d-info">' +
     '<h1>' + esc(t.name) + '</h1>' +
     '<div class="meta">' + kpBadge(t) +
@@ -540,6 +595,7 @@ function renderDetail() {
     '<button class="btn primary focusable" data-act="watch">▶ Смотреть</button>' +
     '<button class="btn focusable' + (t.subscribed ? ' on' : '') + '" data-act="later"><span class="b-txt">' + (t.subscribed ? '✓ Буду смотреть' : 'Буду смотреть') + '</span></button>' +
     '<button class="btn focusable' + (t.bookmarks.length ? ' on' : '') + '" data-act="bookmark"><span class="b-txt">' + (t.bookmarks.length ? '✓ В закладках' : 'В закладки') + '</span></button>' +
+    '<button class="btn focusable' + (t.watched ? ' on' : '') + '" data-act="watched"><span class="b-txt">' + (t.watched ? '✓ Просмотрено' : 'Просмотрено') + '</span></button>' +
     '</div>' +
     (t.desc ? '<p class="d-desc">' + esc(t.desc) + '</p>' : '') +
     (t.cast.length ? '<div class="d-cast"><span class="cast-label">В ролях:</span>' + t.cast.map(function (a) { return '<span class="actor">' + esc(a) + '</span>'; }).join('') + '</div>' : '') +
@@ -637,6 +693,31 @@ function pickDefaultLevel(levels) {
   return maxI;
 }
 
+/* Стартовое качество: сохранённый вручную выбор (держим между сериями),
+   иначе обычный дефолт. «Авто» — оставляем адаптивный режим как есть */
+function applyQualityPref(hls) {
+  var levels = hls.levels || [];
+  if (!levels.length) return;
+  var saved = trackPref('quality');
+  if (saved === 'Авто') { state.qualityH = null; return; }
+  if (saved) {
+    var h = parseInt(saved, 10);
+    for (var i = 0; i < levels.length; i++) {
+      if (levels[i].height === h) {
+        hls.currentLevel = i;
+        state.qualityH = h;
+        return;
+      }
+    }
+  }
+  /* сохранённое качество в этом манифесте отсутствует — дефолт */
+  var ix = pickDefaultLevel(levels);
+  if (ix >= 0) {
+    hls.currentLevel = ix;
+    state.qualityH = levels[ix].height || null;
+  }
+}
+
 /* Транспорт (перемотка/пауза/серии) — по центру; для сериалов добавляем
    переходы между сериями, для фильмов их нет. Субтитры/дорожка/качество —
    отдельной группой справа */
@@ -684,6 +765,8 @@ function playerVideo() { return $('#pv-video'); }
 
 function stopPlayback() {
   state.playing = false;
+  autoNextStop();
+  setBuffering(false);
   clearInterval(state.progressTimer);
   state.progressTimer = null;
   if (state.hls) {
@@ -693,6 +776,60 @@ function stopPlayback() {
   var video = playerVideo();
   video.pause();
   Array.prototype.forEach.call(video.querySelectorAll('track'), function (t) { t.remove(); });
+}
+
+/* Индикатор буферизации: «замерший кадр» без спиннера на слабой сети
+   выглядит как зависший плеер */
+function setBuffering(on) {
+  var b = $('#player-buffering');
+  if (b) b.classList.toggle('hidden', !on);
+}
+
+/* Автопереход к следующей серии: отсчёт с кнопками «Смотреть»/«Отмена».
+   Любая серия сериала завершается через ended → отсчёт 5 с → openPlayer */
+function autoNextStart() {
+  var t = state.title;
+  var nxt = t && isSerial(t) ? nextEpisodeIndex() : null;
+  if (!nxt) { toast('Просмотр завершён'); return; }
+  state.autoNext = { s: nxt.s, e: nxt.e, left: 5, cur: 0 };
+  renderAutoNext();
+  state.autoNext.timer = setInterval(autoNextTick, 1000);
+}
+
+function autoNextTick() {
+  var an = state.autoNext;
+  if (!an) return;
+  an.left--;
+  if (an.left <= 0) { autoNextRun(); return; }
+  renderAutoNext();
+}
+
+function renderAutoNext() {
+  var an = state.autoNext;
+  if (!an) return;
+  var cnt = document.getElementById('an-count');
+  if (cnt) cnt.textContent = an.left;
+  var btns = document.querySelectorAll('#player-autonext .btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('focused', i === an.cur);
+  }
+  document.getElementById('player-autonext').classList.remove('hidden');
+}
+
+function autoNextRun() {
+  var an = state.autoNext;
+  if (!an || !state.title) return;
+  var id = state.title.id;
+  autoNextStop();
+  openPlayer(id, an.s, an.e);
+}
+
+function autoNextStop() {
+  var an = state.autoNext;
+  if (an && an.timer) clearInterval(an.timer);
+  state.autoNext = null;
+  var p = document.getElementById('player-autonext');
+  if (p) p.classList.add('hidden');
 }
 
 function seekBy(delta) {
@@ -1017,6 +1154,7 @@ function selectPopup(i) {
         }
         state.qualityH = height;
       }
+      saveTrackPref('quality', value);
       toast('Качество: ' + value);
     }
   }
@@ -1089,24 +1227,39 @@ function ensureHls() {
 /* Реальная поддержка HEVC у этого браузера: KinoPub отдаёт HEVC- или
    AVC-манифесты по флагу capability устройства, а настройка hevc в профиле
    отражает возможности ТВ — для просмотра через браузер важно то, что умеет
-   сам браузер (иначе «Ошибка воспроизведения» на HEVC-only тайтлах) */
+   сам браузер (иначе «Ошибка воспроизведения» на HEVC-only тайтлах).
+   Результат кэшируем: проверка создаёт video-элемент и не меняется
+   в течение сессии */
+var hevcCache = null;
 function hevcSupported() {
+  if (hevcCache !== null) return hevcCache;
+  var ok = false;
   var profiles = ['hvc1.1.6.L93.B0', 'hvc1.2.4.L150.B0'];
   for (var i = 0; i < profiles.length; i++) {
     var mime = 'video/mp4; codecs="' + profiles[i] + '"';
     try {
-      if (window.MediaSource && MediaSource.isTypeSupported(mime)) return true;
+      if (window.MediaSource && MediaSource.isTypeSupported(mime)) { ok = true; break; }
     } catch (e) {}
     try {
-      if (document.createElement('video').canPlayType(mime)) return true;
+      if (document.createElement('video').canPlayType(mime)) { ok = true; break; }
     } catch (e) {}
   }
-  return false;
+  hevcCache = ok;
+  return ok;
 }
 
 async function openPlayer(id, sIdx, eIdx) {
+  autoNextStop();
   var t = byId(id);
-  if (!t || !t.detail) t = await loadDetail(id);
+  if (!t || !t.detail) {
+    try {
+      t = await loadDetail(id);
+    } catch (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Не удалось открыть карточку: ' + e.message);
+      return;
+    }
+  }
   /* возврат из плеера — в свой экран; state.prev не трогаем, это точка
      возврата карточки (иначе после просмотра назад из карточки зацикливается) */
   state.playerPrev = state.screen === 'player' ? state.playerPrev : state.screen;
@@ -1126,10 +1279,16 @@ async function openPlayer(id, sIdx, eIdx) {
     if (eIdx != null && t.videos && t.videos[eIdx]) query = '?episode=' + t.videos[eIdx].n;
   }
 
-  var infoPromise = api('/play/' + id + query +
-    (query ? '&' : '?') + 'hevc=' + (hevcSupported() ? 1 : 0));
+  var info;
+  try {
+    info = await api('/play/' + id + query +
+      (query ? '&' : '?') + 'hevc=' + (hevcSupported() ? 1 : 0));
+  } catch (e) {
+    if (e && e.code === 'not_registered') { showRegister(); return; }
+    toast('Не удалось начать воспроизведение: ' + e.message);
+    return;
+  }
   var hlsPromise = ensureHls();
-  var info = await infoPromise;
   state.playInfo = info;
   state.subs = 'Выкл';
   await hlsPromise;
@@ -1156,32 +1315,54 @@ function startPlayback(info) {
 
   /* hls.js — в приоритете везде, где есть MSE: только он даёт переключение
      качества и аудиодорожек (у нативного плеера их списки недоступны).
-     Нативный HLS — фолбэк для устройств без MSE и при фатальной ошибке
+     Нативный HLS — фолбэк для устройств без MSE и после неисправимой ошибки
      hls.js (например, неподдерживаемый кодек в манифесте) */
   if (window.Hls && Hls.isSupported()) {
-    var hls = new Hls();
+    var hls = new Hls({
+      /* слабые ТВ тонут в декодировании длинного задела — ограничиваем */
+      backBufferLength: 90
+    });
     state.hls = hls;
+    state.hlsRecovered = 0;
     /* иначе hls.js сам включает дорожку с DEFAULT=YES из манифеста, и
        субтитры появляются вопреки «Выкл» в меню */
     hls.subtitleDisplay = false;
-    hls.on(Hls.Events.ERROR, function (e, d) {
-      if (!d || !d.fatal) return;
+
+    /* Фатальные ошибки лечим по нарастающей: сетевую — перезапуском
+       загрузки, медиа — recoverMediaError (до двух раз), и только потом
+       уходим на нативный плеер — с восстановлением позиции, а не с нуля */
+    var fallbackNative = function () {
+      var pos = video.currentTime;
       try { hls.destroy(); } catch (err) {}
       state.hls = null;
       video.src = info.url;
       restoreOnMeta(video);
+      if (pos > 0) {
+        var onPos = function () {
+          video.removeEventListener('loadedmetadata', onPos);
+          try { video.currentTime = pos; } catch (err) {}
+        };
+        video.addEventListener('loadedmetadata', onPos);
+      }
       var p = video.play();
       if (p && p.catch) { p.catch(function () {}); }
       toast('Включён режим совместимости — выбор качества и дорожек недоступен');
+    };
+
+    hls.on(Hls.Events.ERROR, function (e, d) {
+      if (!d || !d.fatal) return;
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        try { hls.startLoad(); return; } catch (err) { /* ниже */ }
+      } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && state.hlsRecovered < 2) {
+        state.hlsRecovered++;
+        try { hls.recoverMediaError(); return; } catch (err) { /* ниже */ }
+      }
+      fallbackNative();
     });
     hls.loadSource(info.url);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, function () {
-      var ix = pickDefaultLevel(hls.levels || []);
-      if (ix >= 0) {
-        hls.currentLevel = ix;
-        state.qualityH = hls.levels[ix].height || null;
-      }
+      applyQualityPref(hls);
       restoreTracks();
       updateControlLabels();
     });
@@ -1201,6 +1382,7 @@ function startPlayback(info) {
   }
 
   state.playing = true;
+  setBuffering(true);
   var playPromise = video.play();
   if (playPromise && playPromise.catch) { playPromise.catch(function () { /* autoplay policies */ }); }
 
@@ -1266,6 +1448,8 @@ function applyFocus() {
   var elm = row[f.c];
   elm.classList.add('focused');
   if (scr === 'player' || scr === 'register') return;
+  /* подгружаем постеры, приближающиеся к вьюпорту */
+  hydrateVisible();
 
   /* фокус в боковом меню: панель фиксированная и всегда видима — контент
      не скроллим, иначе прощелкивание пунктов дёргает страницу вверх-вниз */
@@ -1325,6 +1509,18 @@ function applyFocus() {
       !collectionsState.loading && collectionsState.hasMore &&
       f.r >= rows.length - 2) {
     loadCollectionsPage();
+  }
+  /* сетка папки закладок: следующая страница у нижних строк */
+  if (scr === 'bookmarks' && !bmState.loading && bmState.hasMore &&
+      bmState.folder === state.bookmarkFolder &&
+      f.r >= rows.length - 2) {
+    loadBookmarksPage();
+  }
+  /* результаты поиска: догрузка страниц, пока они соответствуют строке запроса */
+  if (scr === 'search' && state.searchResults && !searchState.loading &&
+      searchState.hasMore && searchState.query === state.query.trim() &&
+      f.r >= rows.length - 2) {
+    loadSearchPage(searchState.page + 1, true);
   }
 }
 
@@ -1416,7 +1612,26 @@ function switchScreen(name) {
 
 async function openDetail(id) {
   var t = byId(id);
-  if (!t || !t.detail) t = await loadDetail(id);
+  if (!t || !t.detail) {
+    /* пока /items/{id} в полёте, показываем экран детали со спиннером —
+       иначе по «ОК» секунды ничего не происходит вообще */
+    if (state.screen !== 'detail') {
+      var s = $('#screen-detail');
+      s.innerHTML = '<div class="page-head"><h1>Загрузка…</h1></div>';
+      ROWS.detail = [];
+      switchScreen('detail');
+    }
+    try {
+      t = await loadDetail(id);
+    } catch (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Не удалось открыть карточку: ' + e.message);
+      if (state.screen === 'detail' && !state.title) {
+        switchScreen(state.prev && state.prev !== 'player' ? state.prev : 'home');
+      }
+      return;
+    }
+  }
   if (state.screen === 'detail' && state.title && state.title.id !== t.id) {
     /* переход карточка → карточка («Похожие»): запоминаем, откуда пришли,
        чтобы Back вернул на предыдущую карточку, а не застрял */
@@ -1540,9 +1755,52 @@ function loadHome() {
       applyFocus();
     })
     .catch(function (e) {
-      if (e && e.code === 'not_registered') { SECTION_RENDERED.home = false; showRegister(); return; }
-      toast('Ошибка загрузки: ' + e.message);
+      SECTION_RENDERED.home = false;
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      renderHomeError(e.message);
     });
+}
+
+/* Плейсхолдеры, пока /home в полёте: пустой тёмный экран с одним меню
+   на старте приложения выглядел сломанным */
+function renderHomeSkeleton() {
+  renderNav();
+  var c = $('#home-content');
+  c.innerHTML = '';
+  c.style.transform = 'translateY(0)';
+  c.appendChild(el('section', 'hero skel skel-hero'));
+  for (var i = 0; i < 3; i++) {
+    var r = el('section', 'rail');
+    r.appendChild(el('h2', 'skel skel-line', ''));
+    var track = el('div', 'track');
+    for (var j = 0; j < 6; j++) track.appendChild(el('div', 'skel skel-card'));
+    r.appendChild(track);
+    c.appendChild(r);
+  }
+  ROWS.home = [topRow()];
+  FOCUS.home = { r: 0, c: 0 };
+  markNavCurrent();
+  applyFocus();
+}
+
+/* Сбой загрузки главной — инлайн-ошибка с кнопкой «Повторить», а не тост,
+   который мигнёт и исчезнет */
+function renderHomeError(message) {
+  renderNav();
+  var c = $('#home-content');
+  c.innerHTML = '';
+  c.style.transform = 'translateY(0)';
+  c.appendChild(el('div', 'page-head',
+    '<h1>Главная</h1><div class="sub">Не удалось загрузить: ' + esc(message) + '</div>'));
+  var retry = el('button', 'btn primary focusable', 'Повторить');
+  retry.dataset.act = 'retry-home';
+  var wrap = el('div', 'retry-wrap');
+  wrap.appendChild(retry);
+  c.appendChild(wrap);
+  ROWS.home = [topRow(), [retry]];
+  FOCUS.home = { r: 1, c: 0 };
+  markNavCurrent();
+  applyFocus();
 }
 
 /* ------------------------------- Каталог --------------------------------- */
@@ -1578,10 +1836,16 @@ function openCatalog(type) {
     if (pending > 0) return;
     loading.remove();
     if (!made) {
-      /* ничего не загрузилось — даём повторить при следующем заходе */
+      /* ничего не загрузилось — даём повторить прямо на месте */
       delete SECTION_RENDERED['catalog:' + type];
       c.appendChild(el('div', 'page-head',
-        '<div class="sub">Не удалось загрузить каталог. Попробуйте позже.</div>'));
+        '<div class="sub">Не удалось загрузить каталог.</div>'));
+      var retry = el('button', 'btn primary focusable', 'Повторить');
+      retry.dataset.act = 'retry-catalog';
+      var wrap = el('div', 'retry-wrap');
+      wrap.appendChild(retry);
+      c.appendChild(wrap);
+      rebuildRows('catalog', true);
     }
   }
 
@@ -1746,6 +2010,11 @@ function loadSectionPage(token) {
         toast('Не удалось загрузить ещё: ' + e.message);
       } else {
         state.sectionGrid.appendChild(el('div', 'card-sub', 'Ошибка загрузки: ' + esc(e.message)));
+        var retry = el('button', 'btn primary focusable', 'Повторить');
+        retry.dataset.act = 'retry-section';
+        var wrap = el('div', 'retry-wrap');
+        wrap.appendChild(retry);
+        state.sectionGrid.appendChild(wrap);
         rebuildRows('section', false);
       }
     });
@@ -1858,7 +2127,7 @@ var SEARCH_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="
 
 var KB_LAYOUTS = {
   ru: [
-    ['й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'],
+    ['ё', 'й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'],
     ['ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'],
     ['я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'б', 'ю', '⌫'],
   ],
@@ -1923,8 +2192,8 @@ function updateQueryBar() {
 }
 
 function searchKey(key) {
-  if (key.dataset.kb === 'go') { runSearch(); return; }
-  if (key.dataset.kb === 'space') { state.query += ' '; updateQueryBar(); return; }
+  if (key.dataset.kb === 'go') { runSearch(false); return; }
+  if (key.dataset.kb === 'space') { state.query += ' '; updateQueryBar(); scheduleLiveSearch(); return; }
   if (key.dataset.kb === 'clear') { state.query = ''; updateQueryBar(); return; }
   if (key.dataset.kb === 'lang') {
     state.kbLang = state.kbLang === 'ru' ? 'en' : 'ru';
@@ -1946,29 +2215,66 @@ function searchKey(key) {
   if (k === '⌫') state.query = state.query.slice(0, -1);
   else state.query += k;
   updateQueryBar();
+  scheduleLiveSearch();
 }
 
-function runSearch() {
-  if (!state.query.trim()) { toast('Введите название'); return; }
-  toast('Ищем: ' + state.query);
-  api('/search?q=' + encodeURIComponent(state.query.trim()))
+/* Живой поиск: после паузы в наборе (700 мс, от 2 символов) результат
+   подгружается сам — идти к кнопке «Найти» не обязательно. Фокус остаётся
+   на клавиатуре, строка ввода не перерисовывается */
+var searchTimer = null;
+var searchState = { query: '', page: 0, items: [], hasMore: false, loading: false };
+
+function scheduleLiveSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = null;
+  if (state.query.trim().length < 2) return;
+  searchTimer = setTimeout(function () { runSearch(true); }, 700);
+}
+
+function runSearch(auto) {
+  var q = state.query.trim();
+  if (!q) { if (!auto) toast('Введите название'); return; }
+  if (auto && state.searchQuery === q && state.searchResults) return;
+  clearTimeout(searchTimer);
+  searchTimer = null;
+  if (!auto) toast('Ищем: ' + q);
+  searchState = { query: q, page: 0, items: [], hasMore: true, loading: false };
+  loadSearchPage(1, auto);
+}
+
+function loadSearchPage(page, auto) {
+  if (searchState.loading) return;
+  searchState.loading = true;
+  api('/search?q=' + encodeURIComponent(searchState.query) + '&page=' + page)
     .then(function (res) {
-      state.searchResults = (res.items || []).map(adaptCard);
-      state.searchResults.forEach(remember);
+      searchState.loading = false;
+      var items = (res.items || []).map(adaptCard);
+      items.forEach(remember);
+      searchState.items = page === 1 ? items : searchState.items.concat(items);
+      searchState.page = page;
+      searchState.hasMore = !!res.has_more;
+      state.searchResults = searchState.items;
+      state.searchQuery = searchState.query;
       renderSearch();
-      FOCUS.search = { r: 1, c: 0 };
-      applyFocus();
+      if (auto) {
+        applyFocus(); /* фокус остаётся на клавиатуре */
+      } else {
+        FOCUS.search = { r: 1, c: 0 };
+        applyFocus();
+      }
     })
-    .catch(function (e) { toast('Ошибка поиска: ' + e.message); });
+    .catch(function (e) {
+      searchState.loading = false;
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      if (!auto || page === 1) toast('Ошибка поиска: ' + e.message);
+    });
 }
 
 function renderSearchResults(c) {
   var items = state.searchResults;
   if (!items.length) {
-    c.appendChild(el('div', 'empty-state',
-      '<div class="es-icon">🔍</div>' +
-      '<div class="es-title">Ничего не нашлось</div>' +
-      '<div class="es-sub">Проверьте раскладку клавиатуры или измените запрос</div>'));
+    c.appendChild(emptyState('search', 'Ничего не нашлось',
+      'Проверьте раскладку клавиатуры или измените запрос'));
     return;
   }
   c.appendChild(el('div', 'page-head',
@@ -1991,16 +2297,18 @@ function openSearch() {
 
 /* ------------------------------- Закладки -------------------------------- */
 
+/* Состояние пагинации активной папки: папки больше одной upstream-страницы
+   догружаются у нижних строк сетки */
+var bmState = { folder: null, page: 0, hasMore: false, loading: false };
+
 function renderBookmarks() {
   var c = $('#bookmarks-content');
   c.innerHTML = '';
-  c.appendChild(el('div', 'page-head', '<h1>Закладки</h1><div class="sub" id="bm-sub">Загрузка…</div>'));
+  c.appendChild(el('div', 'page-head', '<h1>Закладки</h1><div class="sub" id="bm-sub"></div>'));
 
   if (!state.bookmarkFolders.length) {
-    c.appendChild(el('div', 'empty-state',
-      '<div class="es-icon">🔖</div>' +
-      '<div class="es-title">Закладок пока нет</div>' +
-      '<div class="es-sub">Откройте карточку фильма или сериала и нажмите «В закладки»</div>'));
+    c.appendChild(emptyState('bookmark', 'Закладок пока нет',
+      'Откройте карточку фильма или сериала и нажмите «В закладки»'));
     buildBrowseRows('bookmarks');
     markNavCurrent();
     applyFocus();
@@ -2017,25 +2325,44 @@ function renderBookmarks() {
   c.appendChild(tabs);
   c.appendChild(el('div', 'grid', '<div class="card-sub" style="grid-column:1/-1">Загрузка…</div>'));
 
-  api('/bookmarks/' + state.bookmarkFolder)
+  bmState = { folder: state.bookmarkFolder, page: 0, hasMore: false, loading: false };
+  buildBrowseRows('bookmarks');
+  loadBookmarksPage();
+}
+
+function loadBookmarksPage() {
+  if (bmState.loading || !state.bookmarkFolder) return;
+  if (bmState.page > 0 && !bmState.hasMore) return;
+  bmState.loading = true;
+  var page = bmState.page + 1;
+  api('/bookmarks/' + state.bookmarkFolder + '?page=' + page)
     .then(function (res) {
-      var grid = c.querySelector('.grid');
-      if (!grid) return;
-      grid.innerHTML = '';
+      bmState.loading = false;
+      var grid = $('#bookmarks-content .grid');
+      if (!grid || bmState.folder !== state.bookmarkFolder) return;
+      var placeholder = grid.querySelector('.card-sub');
+      if (placeholder) placeholder.remove();
       var items = (res.items || []).map(adaptCard);
-      if (!items.length) {
+      if (!items.length && page === 1) {
         grid.appendChild(el('div', 'card-sub', 'В этой папке пусто'));
       } else {
         items.forEach(remember);
         items.forEach(function (t) { grid.appendChild(posterCard(t)); });
       }
-      c.querySelector('#bm-sub').textContent = '';
+      bmState.page = page;
+      bmState.hasMore = !!res.has_more;
+      var sub = document.querySelector('#bm-sub');
+      if (sub) sub.textContent = '';
       buildBrowseRows('bookmarks');
       if (!FOCUS.bookmarks || FOCUS.bookmarks.r >= ROWS.bookmarks.length) FOCUS.bookmarks = { r: 1, c: 0 };
       markNavCurrent();
       applyFocus();
     })
-    .catch(function (e) { toast('Ошибка: ' + e.message); });
+    .catch(function (e) {
+      bmState.loading = false;
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
 }
 
 function openBookmarks() {
@@ -2063,7 +2390,10 @@ function bookmarkTab(tab) {
     document.querySelectorAll('#bookmarks-content .tab'),
     function (t) { t.classList.toggle('active', t === tab); }
   );
-  renderBookmarks();
+  var grid = $('#bookmarks-content .grid');
+  if (grid) grid.innerHTML = '<div class="card-sub" style="grid-column:1/-1">Загрузка…</div>';
+  bmState = { folder: state.bookmarkFolder, page: 0, hasMore: false, loading: false };
+  loadBookmarksPage();
 }
 
 /* -------------------------------- История -------------------------------- */
@@ -2080,10 +2410,19 @@ var HISTORY_TABS = [['all', 'Все'], ['movie', 'Фильмы'], ['serial', 'С
 function historyCard(t) {
   var c = posterCard(t);
   var sub = c.querySelector('.card-sub');
+  var parts = [];
   if (t.type === 'serial' && t.media && t.media.season != null) {
-    sub.textContent = 'Сезон ' + t.media.season + ' · Серия ' + t.media.number;
+    parts.push('Сезон ' + t.media.season + ' · Серия ' + t.media.number);
+  } else if (t.year) {
+    parts.push(String(t.year));
   }
+  var rel = fmtRel(t.watchedAt);
+  if (rel) parts.push(rel);
+  sub.textContent = parts.join(' · ');
   if (t.progressPct > 0 && t.progressPct < 100) {
+    /* начатый тайтл по OK продолжает просмотр с позиции, а не открывает
+       карточку */
+    c.dataset.kind = 'watch';
     c.querySelector('.poster-art').appendChild(
       el('div', 'poster-progress', '<i style="width:' + t.progressPct + '%"></i>')
     );
@@ -2127,12 +2466,11 @@ function renderHistoryBody(done) {
   var shown = historyFiltered();
   if (!shown.length) {
     if (!done) return;
-    body.appendChild(el('div', 'empty-state',
-      '<div class="es-icon">🕘</div>' +
-      '<div class="es-title">' + (historyItems.length ? 'В этой вкладке пусто' : 'История пуста') + '</div>' +
-      '<div class="es-sub">' + (historyItems.length
+    body.appendChild(emptyState('history',
+      historyItems.length ? 'В этой вкладке пусто' : 'История пуста',
+      historyItems.length
         ? 'Переключитесь на другую вкладку'
-        : 'Начните смотреть — здесь появится начатое и просмотренное') + '</div>'));
+        : 'Начните смотреть — здесь появится начатое и просмотренное'));
     rebuildRows('history', false);
     return;
   }
@@ -2274,9 +2612,23 @@ function renderSettings() {
   rows.appendChild(setToggleRow('uhd', '4K (Ultra HD)', 'Запрашивать 4K-стримы, если доступны', !!s.uhd));
   rows.appendChild(setToggleRow('hdr', 'HDR', 'HDR-версии видео', !!s.hdr));
   rows.appendChild(setToggleRow('hevc', 'HEVC (H.265)', 'Экономит трафик при том же качестве', !!s.hevc));
+  /* размер постеров — не переключатель, а выбор из двух значений: OK
+     циклически меняет значение */
+  var ps = el('div', 'set-row focusable');
+  ps.dataset.set = 'poster_size';
+  ps.innerHTML = '<div>' + esc('Размер постеров') +
+    '<div class="row-sub">' + esc('Мелкие постеры быстрее грузятся на слабом соединении') + '</div></div>' +
+    '<div class="set-val">' + esc(s.poster_size === 'small' ? 'Мелкие' : 'Крупные') + '</div>';
+  rows.appendChild(ps);
   c.appendChild(rows);
 
   var acts = el('div', 'set-rows set-acts');
+  var clearH = el('div', 'set-row focusable');
+  clearH.dataset.act = 'clear-history';
+  clearH.innerHTML = '<div>' + esc('Очистить историю просмотров') +
+    '<div class="row-sub">' + esc('Удалит всю историю на KinoPub — для всех устройств аккаунта') + '</div></div>' +
+    '<div class="set-act-ico">✕</div>';
+  acts.appendChild(clearH);
   var reboot = el('div', 'set-row focusable');
   reboot.dataset.act = 'reboot';
   reboot.innerHTML = '<div>' + esc('Перезагрузка приложения') +
@@ -2284,6 +2636,13 @@ function renderSettings() {
     '<div class="set-act-ico">↻</div>';
   acts.appendChild(reboot);
   c.appendChild(acts);
+
+  /* служебная строка: версия и идентификатор устройства для диагностики */
+  var ver = (state.settings && state.settings.version) || '';
+  var dev = String(window.KPTV.deviceId || '');
+  c.appendChild(el('div', 'set-version',
+    'KPTV' + (ver ? ' v' + esc(ver) : '') +
+    (dev ? ' · устройство ' + esc(dev.slice(0, 8)) : '')));
 
   buildBrowseRows('settings');
   FOCUS.settings = { r: 1, c: 0 };
@@ -2306,26 +2665,64 @@ function openSettings() {
     });
 }
 
-function toggleSetting(row) {
-  var key = row.dataset.set;
-  var s = (state.settings && state.settings.settings) || {};
+/* Общий сейв настроек: переключатели шлют инвертированное значение,
+   poster_size — следующее по циклу. Профиль сохраняем из прошлого ответа,
+   POST отдаёт только настройки (иначе блок подписки пропадает после каждого
+   переключения) */
+function saveSetting(key, value, focusRow) {
   var patch = {};
-  patch[key] = !s[key];
-  var focusRow = FOCUS.settings.r;
+  patch[key] = value;
   api('/settings', { method: 'POST', body: patch })
     .then(function (res) {
-      /* POST отдаёт только настройки — профиль сохраняем из прошлого
-         ответа, иначе блок подписки пропадает после каждого переключения */
       state.settings = {
         settings: res.settings,
         account: state.settings && state.settings.account,
+        version: state.settings && state.settings.version,
       };
       renderSettings();
       FOCUS.settings = { r: Math.min(focusRow, ROWS.settings.length - 1), c: 0 };
       applyFocus();
       toast('Сохранено');
     })
-    .catch(function (e) { toast('Ошибка: ' + e.message); });
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
+}
+
+function toggleSetting(row) {
+  var key = row.dataset.set;
+  var s = (state.settings && state.settings.settings) || {};
+  saveSetting(key, !s[key], FOCUS.settings.r);
+}
+
+function cyclePosterSize() {
+  var s = (state.settings && state.settings.settings) || {};
+  saveSetting('poster_size', s.poster_size === 'small' ? 'big' : 'small', FOCUS.settings.r);
+}
+
+/* Очистка истории — необратимая операция на аккаунте целиком, поэтому
+   через подтверждение, а не по одному OK */
+function confirmClearHistory() {
+  state.modal = 'confirm';
+  state.confirm = {
+    title: 'История просмотров',
+    text: 'Удалить всю историю на KinoPub? Действие необратимо и затронет все устройства аккаунта.',
+    okLabel: 'Очистить',
+    cur: 0,
+    onOk: function () {
+      api('/history/clear', { method: 'POST', body: {} })
+        .then(function () {
+          toast('История очищена');
+          if (state.screen === 'history') openHistory();
+        })
+        .catch(function (e) {
+          if (e && e.code === 'not_registered') { showRegister(); return; }
+          toast('Ошибка: ' + e.message);
+        });
+    }
+  };
+  renderModal();
 }
 
 /* Перезагрузка приложения с очисткой кэша. Чистим Cache Storage, если
@@ -2357,31 +2754,157 @@ function navAction(id) {
 
 /* ------------------- Модал выбора папки закладок ------------------- */
 
+/* state.modal: 'bookmarks' — выбор папок, 'newfolder' — создание папки
+   (экранная клавиатура), 'confirm' — подтверждение действия */
 function openBookmarkFolders() {
-  var t = state.title;
-  if (!t.folders.length) { toast('Нет папок закладок — создайте папку на kino.pub'); return; }
   state.modal = 'bookmarks';
   state.modalIdx = 0;
   renderModal();
 }
 
 function renderModal() {
+  var box = $('#modal-box');
+  box.className = '';
+
+  if (state.modal === 'confirm') {
+    var c = state.confirm;
+    box.innerHTML =
+      '<div class="popup-title">' + esc(c.title) + '</div>' +
+      '<div class="confirm-text">' + esc(c.text) + '</div>' +
+      '<div class="confirm-btns">' +
+      '<button class="btn focusable' + (c.cur === 0 ? ' focused' : '') + '" data-cm="cancel">Отмена</button>' +
+      '<button class="btn primary focusable' + (c.cur === 1 ? ' focused' : '') + '" data-cm="ok">' + esc(c.okLabel || 'Подтвердить') + '</button>' +
+      '</div>';
+    $('#modal').classList.remove('hidden');
+    return;
+  }
+
+  if (state.modal === 'newfolder') { renderNewFolder(); return; }
+
   var t = state.title;
-  var items = t.folders.map(function (f, i) {
-    var inside = t.bookmarks.indexOf(f.id) >= 0;
+  var list = [{ create: true, title: '+ Новая папка' }].concat(t.folders || []);
+  var items = list.map(function (f, i) {
+    var inside = !f.create && t.bookmarks.indexOf(f.id) >= 0;
     return '<div class="modal-item' + (i === state.modalIdx ? ' cur' : '') + '" data-i="' + i + '">' +
-      '<span class="mi-check">' + (inside ? '✓' : '') + '</span>' +
+      '<span class="mi-check">' + (inside ? '✓' : (f.create ? '+' : '')) + '</span>' +
       '<span class="mi-name">' + esc(f.title) + '</span>' +
-      '<span class="mi-count">' + (f.count != null ? f.count : '') + '</span></div>';
+      '<span class="mi-count">' + (!f.create && f.count != null ? f.count : '') + '</span></div>';
   }).join('');
-  $('#modal-box').innerHTML =
-    '<div class="popup-title">Закладки</div>' + items;
+  box.innerHTML = '<div class="popup-title">Закладки</div>' + items;
   $('#modal').classList.remove('hidden');
 }
 
 function closeModal() {
   state.modal = null;
   $('#modal').classList.add('hidden');
+}
+
+/* Создание папки: компактная экранная клавиатура в модале (пультовых
+   клавиш всего десять — печатать по буквам с неё и единственный путь) */
+function openNewFolder() {
+  state.modal = 'newfolder';
+  state.nf = { value: '', lang: 'ru', sel: 'done' };
+  renderModal();
+}
+
+function renderNewFolder() {
+  var nf = state.nf;
+  var box = $('#modal-box');
+  box.className = 'modal-wide';
+  var rows = KB_LAYOUTS[nf.lang].map(function (row) {
+    var keys = row.map(function (k) {
+      if (k === '⌫') return '<button class="kb-key kb-mini wide" data-nk="back">' + BACKSPACE_ICON + '</button>';
+      return '<button class="kb-key kb-mini" data-nk="' + k + '">' + esc(k) + '</button>';
+    }).join('');
+    return '<div class="kb-row">' + keys + '</div>';
+  }).join('');
+  box.innerHTML =
+    '<div class="popup-title">Новая папка закладок</div>' +
+    '<div class="nf-query"><span id="nf-text">' + esc(nf.value) + '</span><span class="q-caret"></span></div>' +
+    '<div class="nf-kb">' + rows + '</div>' +
+    '<div class="kb-row nf-controls">' +
+    '<button class="kb-key kb-mini" data-nk="lang">' + (nf.lang === 'ru' ? 'RU' : 'EN') + '</button>' +
+    '<button class="kb-key kb-mini wide" data-nk="space">Пробел</button>' +
+    '<button class="kb-key kb-mini wide" data-nk="done">Создать</button>' +
+    '<button class="kb-key kb-mini" data-nk="cancel">Отмена</button>' +
+    '</div>';
+  var cur = box.querySelector('[data-nk="' + nf.sel + '"]');
+  if (cur) cur.classList.add('focused');
+  $('#modal').classList.remove('hidden');
+}
+
+/* Навигация по клавишам модала по их реальной геометрии: строки раскладок
+   разной длины, считать индексы бессмысленно — берём ближайший по центру */
+function nfMove(dx, dy) {
+  var keys = Array.prototype.slice.call(document.querySelectorAll('#modal-box .kb-key'));
+  if (!keys.length || !state.nf) return;
+  var cur = null, ci = -1;
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].dataset.nk === state.nf.sel) { cur = keys[i]; ci = i; break; }
+  }
+  if (!cur) { state.nf.sel = keys[0].dataset.nk; renderModal(); return; }
+  if (dx) {
+    var ni = ci + dx;
+    if (ni < 0 || ni >= keys.length) return;
+    state.nf.sel = keys[ni].dataset.nk;
+    renderModal();
+    return;
+  }
+  var cr = cur.getBoundingClientRect();
+  var cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+  var best = null, bestScore = Infinity;
+  keys.forEach(function (k) {
+    if (k === cur) return;
+    var r = k.getBoundingClientRect();
+    var kx = r.left + r.width / 2, ky = r.top + r.height / 2;
+    if (dy < 0 && ky >= cy - 2) return;
+    if (dy > 0 && ky <= cy + 2) return;
+    var score = Math.abs(kx - cx) * 2 + Math.abs(ky - cy);
+    if (score < bestScore) { bestScore = score; best = k; }
+  });
+  if (best) { state.nf.sel = best.dataset.nk; renderModal(); }
+}
+
+function nfPress(elm) {
+  var nf = state.nf;
+  if (!nf) return;
+  var k = elm.dataset.nk;
+  if (k === 'done') { createFolder(); return; }
+  if (k === 'cancel') { closeModal(); return; }
+  if (k === 'back') nf.value = nf.value.slice(0, -1);
+  else if (k === 'space') nf.value += ' ';
+  else if (k === 'lang') nf.lang = nf.lang === 'ru' ? 'en' : 'ru';
+  else nf.value += k;
+  if (nf.value.length > 60) nf.value = nf.value.slice(0, 60);
+  renderModal();
+}
+
+function createFolder() {
+  var title = state.nf.value.trim();
+  if (!title) { toast('Введите название папки'); return; }
+  api('/bookmarks/folders', { method: 'POST', body: { title: title } })
+    .then(function () {
+      closeModal();
+      toast('Папка «' + title + '» создана');
+      return api('/bookmarks');
+    })
+    .then(function (res) {
+      state.bookmarkFolders = (res && res.folders) || state.bookmarkFolders;
+      if (state.title && state.title.detail) {
+        state.title.folders = state.bookmarkFolders.slice();
+      }
+      if (state.screen === 'bookmarks') {
+        /* перечитать вкладки со свежими счётчиками */
+        SECTION_RENDERED.bookmarks = false;
+        openBookmarks();
+      } else if (state.screen === 'detail') {
+        openBookmarkFolders();
+      }
+    })
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
 }
 
 function syncBookmarkButton() {
@@ -2394,8 +2917,9 @@ function syncBookmarkButton() {
 }
 
 function toggleBookmarkFolder(i) {
+  if (i === 0) { openNewFolder(); return; }
   var t = state.title;
-  var f = t.folders[i];
+  var f = t.folders[i - 1];
   if (!f) return;
   var wasIn = t.bookmarks.indexOf(f.id) >= 0;
   api('/bookmarks/toggle', { method: 'POST', body: { item: t.id, folder: f.id } })
@@ -2406,7 +2930,10 @@ function toggleBookmarkFolder(i) {
       renderModal();
       syncBookmarkButton();
     })
-    .catch(function (e) { toast('Ошибка: ' + e.message); });
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
 }
 
 function toggleLater(btn) {
@@ -2418,7 +2945,36 @@ function toggleLater(btn) {
       btn.querySelector('.b-txt').textContent = t.subscribed ? '✓ Буду смотреть' : 'Буду смотреть';
       toast(t.subscribed ? 'Добавлено в «Смотрю»' : 'Убрано из «Смотрю»');
     })
-    .catch(function (e) { toast('Ошибка: ' + e.message); });
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
+}
+
+/* Отметка просмотра на уровне тайтла: флаги серий/версий меняем сразу
+   локально — обновлённый watching придёт из KP при следующем заходе */
+function toggleWatched(btn) {
+  var t = state.title;
+  api('/watching/toggle', { method: 'POST', body: { id: t.id } })
+    .then(function () {
+      t.watched = !t.watched;
+      if (t.seasons) {
+        t.seasons.forEach(function (s) {
+          s.episodes.forEach(function (e) { e.watched = t.watched; });
+        });
+      }
+      if (t.videos) {
+        t.videos.forEach(function (v) { v.watched = t.watched; });
+      }
+      renderDetail();
+      FOCUS.detail = { r: 0, c: 0 };
+      applyFocus();
+      toast(t.watched ? 'Отмечено как просмотренное' : 'Отмечено как непросмотренное');
+    })
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
 }
 
 function activate() {
@@ -2431,6 +2987,7 @@ function activate() {
   }
 
   if (state.screen === 'home') {
+    if (elm.dataset.act === 'retry-home') return loadHome();
     if (elm.dataset.act === 'watch') return openPlayer(Number(elm.closest('.hero').dataset.id || FEATURED_ID));
     if (elm.dataset.act === 'more') return openDetail(FEATURED_ID);
     if (elm.dataset.kind === 'watch') return openPlayer(Number(elm.dataset.id));
@@ -2440,6 +2997,11 @@ function activate() {
   if (state.screen === 'catalog' || state.screen === 'section' ||
       state.screen === 'collections' || state.screen === 'search' ||
       state.screen === 'bookmarks' || state.screen === 'history') {
+    if (elm.dataset.act === 'retry-catalog') {
+      delete SECTION_RENDERED['catalog:' + state.catalogType];
+      return openCatalog(state.catalogType);
+    }
+    if (elm.dataset.act === 'retry-section') return loadSectionPage();
     if (elm.dataset.key || elm.dataset.kb) return searchKey(elm);
     if (elm.dataset.folder) return bookmarkTab(elm);
     if (elm.dataset.htab) return historyTabSelect(elm);
@@ -2457,6 +3019,8 @@ function activate() {
 
   if (state.screen === 'settings') {
     if (elm.dataset.act === 'reboot') return reloadApp();
+    if (elm.dataset.act === 'clear-history') return confirmClearHistory();
+    if (elm.dataset.set === 'poster_size') return cyclePosterSize();
     if (elm.dataset.set) return toggleSetting(elm);
   }
 
@@ -2464,6 +3028,7 @@ function activate() {
     var a = elm.dataset.act;
     if (a === 'watch') return openPlayer(state.title.id);
     if (a === 'later') return toggleLater(elm);
+    if (a === 'watched') return toggleWatched(elm);
     if (a === 'bookmark') return openBookmarkFolders();
     if (elm.dataset.season !== undefined) return seasonSelect(+elm.dataset.season);
     if (elm.dataset.e !== undefined) return openPlayer(state.title.id, +elm.dataset.s, +elm.dataset.e);
@@ -2489,6 +3054,22 @@ function normKey(e) {
 }
 
 function playerKey(k, e) {
+  if (state.autoNext) {
+    /* отсчёт автоперехода: стрелки — между кнопками, OK — выбрать,
+       Backspace — отменить и остаться в плеере */
+    var an = state.autoNext;
+    if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
+      an.cur = an.cur ? 0 : 1;
+      renderAutoNext();
+    } else if (k === 'Enter') {
+      an.cur === 0 ? autoNextRun() : autoNextStop();
+    } else if (k === 'Backspace') {
+      autoNextStop();
+    } else return;
+    e.preventDefault();
+    showOverlay();
+    return;
+  }
   if (state.popup) {
     var n = popupConfig(state.popup).items.length;
     if (k === 'ArrowUp') { state.popupIdx = Math.max(0, state.popupIdx - 1); renderPopup(); }
@@ -2515,7 +3096,7 @@ function playerKey(k, e) {
     if (f.r === 0) seekBy(seekStep());
     else { f.c = Math.min(ROWS.player[1].length - 1, f.c + 1); applyFocus(); }
   }
-  else if (k === 'Enter') { if (f.r === 1) activateControl(ROWS.player[1][f.c].dataset.c); }
+  else if (k === 'Enter') { if (f.r === 0) togglePlay(); else activateControl(ROWS.player[1][f.c].dataset.c); }
   else if (k === ' ' || k === 'Pause' || k === 'Play') { activateControl('play'); }
   else if (k === 'Rewind') { activateControl('rew'); }
   else if (k === 'FastForward') { activateControl('fwd'); }
@@ -2526,13 +3107,44 @@ function playerKey(k, e) {
 
 document.addEventListener('keydown', function (e) {
   var k = normKey(e);
-  if (state.modal === 'bookmarks') {
-    var n = state.title.folders.length;
-    if (k === 'ArrowUp') { state.modalIdx = Math.max(0, state.modalIdx - 1); renderModal(); }
-    else if (k === 'ArrowDown') { state.modalIdx = Math.min(n - 1, state.modalIdx + 1); renderModal(); }
-    else if (k === 'Enter') toggleBookmarkFolder(state.modalIdx);
-    else if (k === 'Backspace') closeModal();
-    else return;
+  if (state.modal) {
+    if (state.modal === 'bookmarks') {
+      var n = (state.title.folders ? state.title.folders.length : 0) + 1;
+      if (k === 'ArrowUp') { state.modalIdx = Math.max(0, state.modalIdx - 1); renderModal(); }
+      else if (k === 'ArrowDown') { state.modalIdx = Math.min(n - 1, state.modalIdx + 1); renderModal(); }
+      else if (k === 'Enter') toggleBookmarkFolder(state.modalIdx);
+      else if (k === 'Backspace') closeModal();
+      else return;
+      e.preventDefault();
+      return;
+    }
+    if (state.modal === 'confirm') {
+      var c = state.confirm;
+      if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
+        c.cur = c.cur ? 0 : 1;
+        renderModal();
+      } else if (k === 'Enter') {
+        var fn = c.cur === 1 ? c.onOk : null;
+        closeModal();
+        if (fn) fn();
+      } else if (k === 'Backspace') {
+        closeModal();
+      } else return;
+      e.preventDefault();
+      return;
+    }
+    /* newfolder */
+    if (k === 'ArrowLeft') nfMove(-1, 0);
+    else if (k === 'ArrowRight') nfMove(1, 0);
+    else if (k === 'ArrowUp') nfMove(0, -1);
+    else if (k === 'ArrowDown') nfMove(0, 1);
+    else if (k === 'Enter') {
+      var el = document.querySelector('#modal-box [data-nk="' + state.nf.sel + '"]');
+      if (el) nfPress(el);
+    } else if (k === 'Backspace') {
+      if (state.nf.value) { state.nf.value = state.nf.value.slice(0, -1); renderModal(); }
+      else closeModal();
+    } else return;
     e.preventDefault();
     return;
   }
@@ -2557,6 +3169,7 @@ document.addEventListener('keydown', function (e) {
   });
   video.addEventListener('pause', function () {
     state.playing = false;
+    setBuffering(false);
     updateControlLabels();
     reportProgress();
   });
@@ -2564,13 +3177,27 @@ document.addEventListener('keydown', function (e) {
     state.playing = true;
     updateControlLabels();
   });
+  video.addEventListener('playing', function () { setBuffering(false); });
+  video.addEventListener('canplay', function () { setBuffering(false); });
+  video.addEventListener('seeked', function () { setBuffering(false); });
+  video.addEventListener('waiting', function () {
+    if (state.screen === 'player' && state.playing) setBuffering(true);
+  });
+  video.addEventListener('seeking', function () {
+    if (state.screen === 'player') setBuffering(true);
+  });
+  video.addEventListener('stalled', function () {
+    if (state.screen === 'player' && state.playing) setBuffering(true);
+  });
   video.addEventListener('ended', function () {
     state.playing = false;
+    setBuffering(false);
     updateControlLabels();
     reportProgress();
-    toast('Просмотр завершён');
+    autoNextStart();
   });
   video.addEventListener('error', function () {
+    setBuffering(false);
     if (state.screen === 'player') toast('Ошибка воспроизведения');
   });
 })();
@@ -2587,8 +3214,16 @@ function locate(rows, node) {
 
 $('#stage').addEventListener('mouseover', function (e) {
   if (state.modal) {
-    var mi = e.target.closest('.modal-item');
-    if (mi) { state.modalIdx = +mi.dataset.i; renderModal(); }
+    if (state.modal === 'bookmarks') {
+      var mi = e.target.closest('.modal-item');
+      if (mi) { state.modalIdx = +mi.dataset.i; renderModal(); }
+    } else if (state.modal === 'newfolder') {
+      var nk = e.target.closest('[data-nk]');
+      if (nk && state.nf) { state.nf.sel = nk.dataset.nk; renderModal(); }
+    } else if (state.modal === 'confirm') {
+      var cm = e.target.closest('[data-cm]');
+      if (cm && state.confirm) { state.confirm.cur = cm.dataset.cm === 'ok' ? 1 : 0; renderModal(); }
+    }
     return;
   }
   if (state.popup) {
@@ -2625,12 +3260,29 @@ $('#stage').addEventListener('mouseleave', clearFocused);
 
 $('#stage').addEventListener('click', function (e) {
   if (state.modal) {
-    var mi = e.target.closest('.modal-item');
-    if (mi) toggleBookmarkFolder(+mi.dataset.i);
-    else if (e.target.id === 'modal') closeModal();
+    if (state.modal === 'bookmarks') {
+      var mi = e.target.closest('.modal-item');
+      if (mi) toggleBookmarkFolder(+mi.dataset.i);
+      else if (e.target.id === 'modal') closeModal();
+    } else if (state.modal === 'newfolder') {
+      var nk = e.target.closest('[data-nk]');
+      if (nk) nfPress(nk);
+      else if (e.target.id === 'modal') closeModal();
+    } else if (state.modal === 'confirm') {
+      var cm = e.target.closest('[data-cm]');
+      var ok = cm && cm.dataset.cm === 'ok';
+      var fn = ok ? state.confirm.onOk : null;
+      closeModal();
+      if (fn) fn();
+    }
     return;
   }
   if (state.screen === 'player') {
+    if (state.autoNext) {
+      var an = e.target.closest('[data-an]');
+      if (an) { an.dataset.an === 'play' ? autoNextRun() : autoNextStop(); }
+      return;
+    }
     if (state.popup) {
       var it = e.target.closest('.popup-item');
       if (it) selectPopup(+it.dataset.i);
@@ -2747,6 +3399,7 @@ function showRegister() {
   switchScreen('register');
   ROWS.register = [[]];
   $('#register-code').textContent = '·····';
+  $('#register-hint').textContent = 'Ожидаем подключения…';
   $('#register-qr').classList.add('hidden');
   $('#register-retry').classList.add('hidden');
 
@@ -2774,6 +3427,13 @@ function showRegister() {
               showRegister();
               return;
             }
+            if (e.code === 'no_code') {
+              /* строку устройства собрал GC (неактивированные живут сутки) —
+                 код на kino.pub уже не привяжется, начинаем заново */
+              $('#register-hint').textContent = e.message;
+              showRegister();
+              return;
+            }
             setTimeout(pollRegister, 5000);
           });
       }
@@ -2795,6 +3455,7 @@ function showRegister() {
 function boot() {
   renderNav();
   switchScreen('home');
+  if (!SECTION_RENDERED.home) renderHomeSkeleton();
   loadHome();
 }
 

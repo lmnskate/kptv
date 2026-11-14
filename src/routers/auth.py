@@ -1,4 +1,5 @@
 import re
+import time
 from io import BytesIO
 
 import qrcode
@@ -18,6 +19,31 @@ router = APIRouter(
 
 QR_CODE_PATTERN = re.compile(r'^[0-9A-Za-z]{4,8}$')
 
+# POST /code is internet-facing and creates a DB row + an upstream OAuth call
+# per request — bound the damage from scripts poking the endpoint.
+CODE_RATE_LIMIT = 5
+CODE_RATE_WINDOW = 600
+_code_requests: dict = {}
+
+
+def _rate_limit_exceeded(
+    key
+):
+    now = time.monotonic()
+    window = [
+        stamp for stamp in _code_requests.get(key, [])
+        if now - stamp < CODE_RATE_WINDOW
+    ]
+    _code_requests[key] = window
+    if len(_code_requests) > 1024:
+        _code_requests.clear()
+
+    if len(window) >= CODE_RATE_LIMIT:
+        return True
+    window.append(now)
+
+    return False
+
 
 @router.post('/code')
 async def auth_code(
@@ -28,6 +54,10 @@ async def auth_code(
     current = device(request)
     if current is None:
         return error(400, 'no_device', 'Не передан идентификатор устройства')
+
+    client_host = request.client.host if request.client else 'unknown'
+    if _rate_limit_exceeded(client_host):
+        return error(429, 'rate_limited', 'Слишком много запросов — попробуйте позже')
 
     if storage.get_device_by_id(current.id) is None:
         current = Device.create(current.id)

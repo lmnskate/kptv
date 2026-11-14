@@ -22,5 +22,12 @@ def get_migrations():
 
     CREATE TABLE IF NOT EXISTS domains (domain TEXT PRIMARY KEY);
     INSERT OR IGNORE INTO migrations VALUES (1, 'initial');
-    """
+    """,
+        # Registration timestamps for the stale-device GC (cleanup_stale_devices).
+        # SQLite has no IF NOT EXISTS for ADD COLUMN; the failure window
+        # (column added, version row not yet recorded) is a crash between two
+        # statements, and a rerun then fails loudly instead of corrupting data.
+        """
+    ALTER TABLE devices ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+    """,
     ]

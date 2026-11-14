@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sqlite3
+import time
 
 from config.settings import server
 from devices import migrations
@@ -19,6 +20,24 @@ connection = sqlite3.connect(
     autocommit=True,
     check_same_thread=False
 )
+
+# Rows left behind by aborted registrations (token IS NULL). The POST
+# /auth/code endpoint is internet-facing and creates a row per call, so the
+# GC keeps random ids from piling up in the table. Rows predating the
+# created_at column (0) are never touched.
+UNACTIVATED_TTL = 24 * 3600
+
+
+def cleanup_stale_devices():
+    try:
+        connection.execute(
+            'DELETE FROM devices WHERE token IS NULL AND created_at > 0 '
+            'AND created_at < ?1',
+            [int(time.time()) - UNACTIVATED_TTL]
+        )
+    except sqlite3.OperationalError:
+        # Table does not exist yet — the first migration will create it.
+        pass
 
 
 def _acquire_migrations_lock():
@@ -79,6 +98,7 @@ def _run_migrations():
 
 
 _run_migrations()
+cleanup_stale_devices()
 
 
 def _check_writable():
@@ -112,7 +132,8 @@ def to_device_dict(
         'refresh': row[2],
         'token': row[3],
         'settings': None if row[4] is None else json.loads(row[4]),
-        'user_agent': row[5]
+        'user_agent': row[5],
+        'created_at': row[6] if len(row) > 6 else 0
     }
 
 
@@ -130,7 +151,7 @@ def query_device(
     )
 
 
-DEVICE_COLUMNS = 'id, code, refresh, token, settings, user_agent'
+DEVICE_COLUMNS = 'id, code, refresh, token, settings, user_agent, created_at'
 
 
 def get_device_by_id(
@@ -146,10 +167,11 @@ def create_device(
     entry
 ):
     settings = entry.get('settings')
+    created_at = entry.get('created_at') or int(time.time())
     return query_device(
         f"""
         INSERT OR IGNORE INTO devices ({DEVICE_COLUMNS})
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         RETURNING {DEVICE_COLUMNS}
         """,
         [
@@ -158,7 +180,8 @@ def create_device(
             entry.get('refresh'),
             entry.get('token'),
             None if settings is None else json.dumps(settings),
-            entry.get('user_agent')
+            entry.get('user_agent'),
+            created_at
         ]
     )
 

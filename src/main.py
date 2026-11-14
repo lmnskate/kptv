@@ -11,6 +11,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 
+import config.globals as g
 from config.settings import server
 from devices.device import Device
 from routers import auth, browse, library, media, msx, playback, settings
@@ -29,10 +30,19 @@ async def lifespan(
     try:
         yield
     finally:
+        await Device.close_all_sessions()
         await proxy_service.close_session()
 
 
-app = FastAPI(title='KPTV', version='1.0.3', lifespan=lifespan)
+app = FastAPI(
+    title='KPTV',
+    version=g.APP_VERSION,
+    lifespan=lifespan,
+    # The service is internet-facing; Swagger/OpenAPI are opt-in
+    # (SERVER_DOCS=true) so the schema is not public by default.
+    docs_url='/docs' if server.docs else None,
+    openapi_url='/openapi.json' if server.docs else None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -72,12 +82,15 @@ if CLIENT_DIR.is_dir():
 UNAUTHORIZED_PATHS = frozenset([
     '/',
     '/api/v1/auth/qr.svg',
-    '/docs',
-    '/openapi.json',
     '/msx/start.json',
     '/msx/menu',
     '/msx/logo.svg',
 ])
+if server.docs:
+    UNAUTHORIZED_PATHS = UNAUTHORIZED_PATHS.union([
+        '/docs',
+        '/openapi.json',
+    ])
 
 REGISTRATION_PATHS = frozenset([
     '/api/v1/auth/code',
@@ -207,15 +220,14 @@ async def device_auth(
             else:
                 device.update_user_agent(ua)
 
-    try:
-        return await execute_guarded(
-            request,
-            call_next,
-            context='request'
-        )
-    finally:
-        if device is not None:
-            await device.kp.close_session()
+    # Device instances (and their aiohttp sessions) are cached across
+    # requests for connection reuse — nothing to close here; the lifespan
+    # closes everything at shutdown.
+    return await execute_guarded(
+        request,
+        call_next,
+        context='request'
+    )
 
 
 @app.get('/')
@@ -228,6 +240,16 @@ async def root(
 
 
 if __name__ == '__main__':
+    if server.workers != 1:
+        logger.warning(
+            'SERVER_WORKERS=%s: the per-process in-memory caches and token '
+            'refresh locks assume a single worker — keep SERVER_WORKERS=1',
+            server.workers
+        )
+    # Device ids travel in media URL query strings; the default uvicorn
+    # access log would write them to disk. nginx logs $uri (no args).
+    logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+
     uvicorn.run(
         app='main:app',
         host=server.bind_host,

@@ -33,7 +33,7 @@ async def proxy_head(
     try:
         proxy.check_url(url)
     except proxy.UnknownDomainError:
-        logger.warning('Proxy HEAD request to unknown domain: %s', url)
+        logger.warning('Proxy HEAD request to unknown domain: %.200s', url)
         return Response(
             status_code=403
         )
@@ -43,8 +43,13 @@ async def proxy_head(
             url,
             client_headers=request.headers
         )
+    except proxy.UnknownDomainError:
+        logger.warning('Proxy HEAD refused redirect for: %.200s', url)
+        return Response(
+            status_code=502
+        )
     except (aiohttp.ClientError, asyncio.TimeoutError):
-        logger.warning('Proxy upstream HEAD request failed: %s', url)
+        logger.warning('Proxy upstream HEAD request failed: %.200s', url)
         return Response(
             status_code=502
         )
@@ -69,7 +74,7 @@ async def proxy_request(
     try:
         proxy.check_url(url)
     except proxy.UnknownDomainError:
-        logger.warning('Proxy request to unknown domain: %s', url)
+        logger.warning('Proxy request to unknown domain: %.200s', url)
         return Response(
             status_code=403
         )
@@ -80,8 +85,13 @@ async def proxy_request(
             audio_name=request.query_params.get('audio'),
             client_headers=request.headers
         )
+    except proxy.UnknownDomainError:
+        logger.warning('Proxy refused redirect for: %.200s', url)
+        return Response(
+            status_code=502
+        )
     except (aiohttp.ClientError, asyncio.TimeoutError):
-        logger.warning('Proxy upstream request failed: %s', url)
+        logger.warning('Proxy upstream request failed: %.200s', url)
         return Response(
             status_code=502
         )
@@ -115,15 +125,20 @@ async def subtitle_request(
     try:
         proxy.check_url(url)
     except proxy.UnknownDomainError:
-        logger.warning('Subtitle request to unknown domain: %s', url)
+        logger.warning('Subtitle request to unknown domain: %.200s', url)
         return Response(
             status_code=403
         )
 
     try:
         code, content_type, contents = await proxy.get_subtitle(url)
+    except proxy.UnknownDomainError:
+        logger.warning('Subtitle refused redirect for: %.200s', url)
+        return Response(
+            status_code=502
+        )
     except (aiohttp.ClientError, asyncio.TimeoutError):
-        logger.warning('Subtitle upstream request failed: %s', url)
+        logger.warning('Subtitle upstream request failed: %.200s', url)
         return Response(
             status_code=502
         )
