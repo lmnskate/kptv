@@ -2141,13 +2141,25 @@ var KB_LAYOUTS = {
     ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
     ['z', 'x', 'c', 'v', 'b', 'n', 'm', '⌫'],
   ],
+  /* три ряда, как у букв — высота клавиатуры не меняется при переключении */
   digits: [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-    ['-', '.', ',', ':', '(', ')', '!', '?', '⌫'],
+    ['-', '.', ',', ':', ';', '(', ')', '!', '?'],
+    ['@', '#', '+', '=', '/', '\'', '"', '*', '%', '⌫'],
   ],
 };
 
+/* сохранённая раскладка клавиатуры (localStorage может быть недоступен
+   в ТВ-вебвью — просто остаёмся на RU) */
+function savedKbLang() {
+  try {
+    var l = localStorage.getItem('kptv.kbLang');
+    return KB_LAYOUTS[l] ? l : 'ru';
+  } catch (e) { return 'ru'; }
+}
+
 function renderSearch() {
+  state.kbLang = savedKbLang();
   var c = $('#search-content');
   c.innerHTML = '';
 
@@ -2170,12 +2182,14 @@ function renderSearch() {
     kb.appendChild(row);
   });
   var lastRow = el('div', 'kb-row');
-  [['lang', null], ['layout', '123'], ['space', 'Пробел'], ['clear', 'Стереть всё'], ['go', 'Найти']]
+  /* одна клавиша раскладки: по кругу RU → EN → 123, метка — текущая */
+  [['layout', null], ['space', 'Пробел'], ['clear', 'Стереть всё'], ['go', 'Найти']]
     .forEach(function (pair) {
-      var cls = 'kb-key wide focusable';
+      var cls = 'kb-key focusable';
       var label = pair[1];
-      if (pair[0] === 'lang') label = state.kbLang === 'ru' ? 'RU' : state.kbLang === 'en' ? 'EN' : '123';
-      if (pair[0] === 'layout') label = state.kbLang === 'digits' ? 'АБВ' : '123';
+      if (pair[0] === 'layout') {
+        label = state.kbLang === 'ru' ? 'RU' : state.kbLang === 'en' ? 'EN' : '123';
+      }
       var key = el('button', cls);
       if (pair[0] === 'go') key.innerHTML = SEARCH_ICON + esc(label);
       else key.textContent = label;
@@ -2196,24 +2210,40 @@ function updateQueryBar() {
   if (qt) qt.textContent = state.query || '';
 }
 
+/* Фокус на клавишу переключения раскладки. После перерисовки клавиатуры
+   (r,c) прежнего элемента может не существовать — строки у раскладок разной
+   длины, слепое сохранение индексов переносило фокус на другую клавишу */
+function focusKbLayoutKey() {
+  var rows = ROWS.search;
+  for (var r = 0; r < rows.length; r++) {
+    for (var c = 0; c < rows[r].length; c++) {
+      var elm = rows[r][c];
+      if (elm && elm.dataset && elm.dataset.kb === 'layout') {
+        FOCUS.search = { r: r, c: c };
+        applyFocus();
+        return;
+      }
+    }
+  }
+  applyFocus();
+}
+
 function searchKey(key) {
   if (key.dataset.kb === 'go') { runSearch(false); return; }
   if (key.dataset.kb === 'space') { state.query += ' '; updateQueryBar(); scheduleLiveSearch(); return; }
-  if (key.dataset.kb === 'clear') { state.query = ''; updateQueryBar(); return; }
-  if (key.dataset.kb === 'lang') {
-    state.kbLang = state.kbLang === 'ru' ? 'en' : 'ru';
-    var r = FOCUS.search.r, cc = FOCUS.search.c;
+  if (key.dataset.kb === 'clear') {
+    state.query = '';
+    state.searchResults = null;
+    state.searchQuery = '';
     renderSearch();
-    FOCUS.search = { r: r, c: cc };
-    applyFocus();
+    focusKbLayoutKey();
     return;
   }
   if (key.dataset.kb === 'layout') {
-    state.kbLang = state.kbLang === 'digits' ? 'ru' : 'digits';
-    var r2 = FOCUS.search.r, c2 = FOCUS.search.c;
+    state.kbLang = state.kbLang === 'ru' ? 'en' : state.kbLang === 'en' ? 'digits' : 'ru';
+    try { localStorage.setItem('kptv.kbLang', state.kbLang); } catch (e) { /* ТВ-вебвью без storage */ }
     renderSearch();
-    FOCUS.search = { r: r2, c: c2 };
-    applyFocus();
+    focusKbLayoutKey();
     return;
   }
   var k = key.dataset.key;
@@ -2264,7 +2294,15 @@ function loadSearchPage(page, auto) {
       if (auto) {
         applyFocus(); /* фокус остаётся на клавиатуре */
       } else {
+        /* ручной «Найти» — сразу к результатам, если они есть */
         FOCUS.search = { r: 1, c: 0 };
+        for (var i = 1; i < ROWS.search.length; i++) {
+          var first = ROWS.search[i] && ROWS.search[i][0];
+          if (first && first.dataset && first.dataset.kind) {
+            FOCUS.search = { r: i, c: 0 };
+            break;
+          }
+        }
         applyFocus();
       }
     })
