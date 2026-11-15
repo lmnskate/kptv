@@ -155,7 +155,10 @@ html, body {
   padding: 48px 0;
   background: #0c0f15;
   border-right: 1px solid rgba(255,255,255,.06);
-  box-shadow: 24px 0 48px rgba(0,0,0,.35);
+  /* тень короткая и быстро гаснущая: длинная (24px 0 48px) доходила до лент
+     и ложилась поверх сфокусированных карточек (z-index панели выше) —
+     слева на ховере оставалась тёмная полоса */
+  box-shadow: 10px 0 16px rgba(0,0,0,.28);
 }
 
 .nav-logo {
@@ -497,11 +500,15 @@ html, body {
 }
 
 .d-seasons { margin: 44px 72px 0; }
-.tabs { display: flex; gap: 12px; margin-bottom: 6px; }
+/* position: relative — чтобы offsetLeft табов считался относительно строки
+   (как у .track) и горизонтальный скролл фокуса работал одинаково;
+   transform сдвигает строку при фокусе за правый край */
+.tabs { display: flex; gap: 12px; margin-bottom: 6px; position: relative; transition: transform .22s ease-out; }
 /* страничные табы (закладки) — в линию с заголовком */
 .scroll-content > .tabs { margin: 0 0 26px 72px; }
 
 .tab {
+  flex: none; white-space: nowrap;
   font-size: 19px; font-weight: 700;
   color: var(--muted);
   padding: 11px 24px;
@@ -863,28 +870,28 @@ html, body {
 
 /* карточка профиля */
 .set-profile {
-  display: flex; align-items: center; gap: 30px;
-  margin: 10px 72px 48px;
-  padding: 40px 48px;
+  display: flex; align-items: center; gap: 22px;
+  margin: 0 72px 28px;
+  padding: 24px 32px;
   background: linear-gradient(135deg, #1b2230 0%, #12161d 100%);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 22px;
 }
 .set-avatar {
   flex: none;
-  width: 112px; height: 112px; border-radius: 50%;
+  width: 72px; height: 72px; border-radius: 50%;
   background: linear-gradient(140deg, var(--accent), #c24e0e);
   color: #fff;
-  font-size: 50px; font-weight: 800;
+  font-size: 32px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
-.set-who { font-size: 40px; font-weight: 800; }
-.set-mail { margin-top: 10px; font-size: 24px; color: var(--muted); }
-.set-subline { margin-top: 18px; }
+.set-who { font-size: 28px; font-weight: 800; }
+.set-mail { margin-top: 6px; font-size: 18px; color: var(--muted); }
+.set-subline { margin-top: 10px; }
 .set-sub {
   display: inline-block;
-  font-size: 20px; font-weight: 700;
-  padding: 9px 20px;
+  font-size: 16px; font-weight: 700;
+  padding: 7px 16px;
   border-radius: 999px;
 }
 .set-sub.ok { background: rgba(62,224,111,.16); color: var(--good); }
@@ -893,18 +900,19 @@ html, body {
 .set-rows { margin: 0 72px; }
 /* настроек мало, места много — строки крупнее и выше, чем на остальных
    экранах; заголовок страницы тоже только здесь */
-#settings-content .page-head h1 { font-size: 40px; }
+#settings-content .page-head { margin: 56px 0 28px 72px; }
+#settings-content .page-head h1 { font-size: 34px; }
 .set-row {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--panel);
-  padding: 36px 42px;
-  font-size: 31px;
+  padding: 22px 32px;
+  font-size: 26px;
   cursor: pointer;
   border-bottom: 1px solid rgba(255,255,255,.07);
 }
 .set-rows .set-row:first-child { border-radius: 18px 18px 0 0; }
 .set-rows .set-row:last-child { border-radius: 0 0 18px 18px; border-bottom: none; }
-.set-row .row-sub { color: var(--muted); font-size: 20px; margin-top: 8px; }
+.set-row .row-sub { color: var(--muted); font-size: 16px; margin-top: 5px; }
 .set-row.focused {
   background: rgba(255,255,255,.11);
   border-bottom-color: transparent;
@@ -912,27 +920,29 @@ html, body {
 
 .set-switch {
   position: relative; flex: none;
-  width: 84px; height: 46px;
+  width: 66px; height: 36px;
   border-radius: 999px;
   background: rgba(255,255,255,.18);
   transition: background .15s ease;
 }
 .set-switch i {
-  position: absolute; top: 6px; left: 6px;
-  width: 34px; height: 34px; border-radius: 50%;
+  position: absolute; top: 4px; left: 4px;
+  width: 28px; height: 28px; border-radius: 50%;
   background: #fff;
   transition: left .15s ease;
 }
 .set-row.on .set-switch { background: var(--good); }
-.set-row.on .set-switch i { left: 44px; }
+.set-row.on .set-switch i { left: 34px; }
 .set-row.focused .set-switch { background: rgba(255,255,255,.32); }
 .set-row.on.focused .set-switch { background: var(--good); }
 
-/* строка-действие (перезагрузка): отдельный блок снизу, справа иконка
-   вместо переключателя */
-.set-rows.set-acts { margin-top: 36px; }
+/* строки-действия (перезагрузка, очистка истории): отдельный блок снизу,
+   справа иконка вместо переключателя */
+.set-rows.set-acts { margin-top: 24px; }
 .set-rows.set-acts .set-row { border-radius: 18px; border-bottom: none; }
-.set-act-ico { flex: none; font-size: 40px; color: var(--muted); }
+.set-rows.set-acts .set-row + .set-row { border-radius: 0 0 18px 18px; border-top: 1px solid rgba(255,255,255,.07); }
+.set-rows.set-acts .set-row:first-child { border-radius: 18px 18px 0 0; }
+.set-act-ico { flex: none; font-size: 30px; color: var(--muted); }
 .set-row.focused .set-act-ico { color: var(--accent); }
 
 /* ---------- Фолбэки для старых ТВ-движков ---------- */
@@ -1052,7 +1062,7 @@ html, body {
 
 /* ---------- Настройки: служебная строка ---------- */
 
-.set-version { margin: 40px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
+.set-version { margin: 24px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
 
 /* ---------- Модал: создание папки и подтверждения ---------- */
 

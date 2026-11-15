@@ -1483,11 +1483,12 @@ function applyFocus() {
     y = Math.max(0, Math.min(y, yMax));
     content.style.transform = 'translateY(' + (-y) + 'px)';
   }
-  var track = elm.closest('.track');
+  /* то же самое по горизонтали: лента сдвигается только когда карточка
+     выходит за правый/левый край. Видимая ширина зависит от экрана:
+     браузерные смещены боковой панелью, деталь — нет. Строка табов
+     (сезоны/папки закладок) скроллится так же, если не влезает */
+  var track = elm.closest('.track') || elm.closest('.tabs');
   if (track) {
-    /* то же самое по горизонтали: лента сдвигается только когда карточка
-       выходит за правый/левый край. Видимая ширина зависит от экрана:
-       браузерные смещены боковой панелью, деталь — нет */
     var avail = track.parentElement.clientWidth - 8;
     var max = Math.max(0, track.scrollWidth - avail);
     var tm = /translateX\((-?\d+)px\)/.exec(track.style.transform || '');
@@ -1610,11 +1611,16 @@ function switchScreen(name) {
 }
 
 async function openDetail(id) {
+  /* экран, с которого открываем, запоминаем ДО await: спиннер-ветка ниже
+     уже переключает на detail, и после await state.screen врёт (кажется
+     переход detail → detail — старый тайтл пушится в стек и Back снова
+     открывает предыдущую карточку) */
+  var from = state.screen;
   var t = byId(id);
   if (!t || !t.detail) {
     /* пока /items/{id} в полёте, показываем экран детали со спиннером —
        иначе по «ОК» секунды ничего не происходит вообще */
-    if (state.screen !== 'detail') {
+    if (from !== 'detail') {
       var s = $('#screen-detail');
       s.innerHTML = '<div class="page-head"><h1>Загрузка…</h1></div>';
       ROWS.detail = [];
@@ -1626,12 +1632,12 @@ async function openDetail(id) {
       if (e && e.code === 'not_registered') { showRegister(); return; }
       toast('Не удалось открыть карточку: ' + e.message);
       if (state.screen === 'detail' && !state.title) {
-        switchScreen(state.prev && state.prev !== 'player' ? state.prev : 'home');
+        switchScreen(from && from !== 'player' ? from : 'home');
       }
       return;
     }
   }
-  if (state.screen === 'detail' && state.title && state.title.id !== t.id) {
+  if (from === 'detail' && state.title && state.title.id !== t.id) {
     /* переход карточка → карточка («Похожие»): запоминаем, откуда пришли,
        чтобы Back вернул на предыдущую карточку, а не застрял */
     state.detailStack.push({
@@ -1640,9 +1646,9 @@ async function openDetail(id) {
       focus: { r: FOCUS.detail.r, c: FOCUS.detail.c },
     });
     if (state.detailStack.length > 10) state.detailStack.shift();
-  } else if (state.screen !== 'detail') {
+  } else if (from !== 'detail') {
     state.detailStack = [];
-    state.prev = state.screen;
+    state.prev = from;
   }
   state.title = t;
   state.season = 0;
@@ -2617,6 +2623,12 @@ function renderSettings() {
     '<div class="row-sub">' + esc('Перезапуск и очистка кэша') + '</div></div>' +
     '<div class="set-act-ico">↻</div>';
   acts.appendChild(reboot);
+  var clearHist = el('div', 'set-row focusable');
+  clearHist.dataset.act = 'clear-history';
+  clearHist.innerHTML = '<div>' + esc('Очистка истории просмотра') +
+    '<div class="row-sub">' + esc('Удаляет историю только на этом устройстве') + '</div></div>' +
+    '<div class="set-act-ico"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>';
+  acts.appendChild(clearHist);
   c.appendChild(acts);
 
   /* служебная строка: версия и идентификатор устройства для диагностики */
@@ -2676,6 +2688,20 @@ function toggleSetting(row) {
   var key = row.dataset.set;
   var s = (state.settings && state.settings.settings) || {};
   saveSetting(key, !s[key], FOCUS.settings.r);
+}
+
+/* Очистка истории просмотра. Бэкенд стирает только локальные строки
+   устройства (device_history); общая история аккаунта KinoPub не трогается.
+   Экран истории перечитывается при каждом открытии — сбрасывать его не нужно */
+function clearWatchHistory() {
+  api('/history/clear', { method: 'POST' })
+    .then(function () {
+      toast('История просмотра на этом устройстве очищена');
+    })
+    .catch(function (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Ошибка: ' + e.message);
+    });
 }
 
 /* Перезагрузка приложения с очисткой кэша. Чистим Cache Storage, если
@@ -2959,6 +2985,7 @@ function activate() {
 
   if (state.screen === 'settings') {
     if (elm.dataset.act === 'reboot') return reloadApp();
+    if (elm.dataset.act === 'clear-history') return clearWatchHistory();
     if (elm.dataset.set) return toggleSetting(elm);
   }
 
