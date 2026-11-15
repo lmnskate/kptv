@@ -1050,10 +1050,8 @@ html, body {
 .es-icon { font-size: 0; color: var(--muted); }
 .es-icon svg { width: 72px; height: 72px; }
 
-/* ---------- Настройки: значение выбора и служебная строка ---------- */
+/* ---------- Настройки: служебная строка ---------- */
 
-.set-val { flex: none; font-size: 24px; font-weight: 700; color: var(--muted); }
-.set-row.focused .set-val { color: var(--text); }
 .set-version { margin: 40px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
 
 /* ---------- Модал: создание папки и подтверждения ---------- */
@@ -1073,6 +1071,3 @@ html, body {
 .nf-kb .kb-row, .nf-controls { justify-content: center; margin-top: 10px; }
 .kb-mini { width: 64px; height: 50px; font-size: 20px; }
 .kb-mini.wide { width: 108px; }
-.confirm-text { font-size: 20px; line-height: 1.45; color: #c8cdd6; padding: 4px 14px 20px; }
-.confirm-btns { display: flex; justify-content: flex-end; }
-.confirm-btns > * + * { margin-left: 14px; }

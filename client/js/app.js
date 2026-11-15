@@ -124,7 +124,6 @@ var state = {
   catalogType: null,    // тип, чей контент сейчас в #catalog-content
   autoNext: null,       // {s,e,left,cur,timer} — отсчёт автоперехода к след. серии
   nf: null,             // состояние модала создания папки закладок
-  confirm: null,        // {title,text,okLabel,cur,onOk} — модал подтверждения
 };
 
 /* ----------------------------- Хелперы ---------------------------------- */
@@ -2420,9 +2419,6 @@ function historyCard(t) {
   if (rel) parts.push(rel);
   sub.textContent = parts.join(' · ');
   if (t.progressPct > 0 && t.progressPct < 100) {
-    /* начатый тайтл по OK продолжает просмотр с позиции, а не открывает
-       карточку */
-    c.dataset.kind = 'watch';
     c.querySelector('.poster-art').appendChild(
       el('div', 'poster-progress', '<i style="width:' + t.progressPct + '%"></i>')
     );
@@ -2612,23 +2608,9 @@ function renderSettings() {
   rows.appendChild(setToggleRow('uhd', '4K (Ultra HD)', 'Запрашивать 4K-стримы, если доступны', !!s.uhd));
   rows.appendChild(setToggleRow('hdr', 'HDR', 'HDR-версии видео', !!s.hdr));
   rows.appendChild(setToggleRow('hevc', 'HEVC (H.265)', 'Экономит трафик при том же качестве', !!s.hevc));
-  /* размер постеров — не переключатель, а выбор из двух значений: OK
-     циклически меняет значение */
-  var ps = el('div', 'set-row focusable');
-  ps.dataset.set = 'poster_size';
-  ps.innerHTML = '<div>' + esc('Размер постеров') +
-    '<div class="row-sub">' + esc('Мелкие постеры быстрее грузятся на слабом соединении') + '</div></div>' +
-    '<div class="set-val">' + esc(s.poster_size === 'small' ? 'Мелкие' : 'Крупные') + '</div>';
-  rows.appendChild(ps);
   c.appendChild(rows);
 
   var acts = el('div', 'set-rows set-acts');
-  var clearH = el('div', 'set-row focusable');
-  clearH.dataset.act = 'clear-history';
-  clearH.innerHTML = '<div>' + esc('Очистить историю просмотров') +
-    '<div class="row-sub">' + esc('Удалит всю историю на KinoPub — для всех устройств аккаунта') + '</div></div>' +
-    '<div class="set-act-ico">✕</div>';
-  acts.appendChild(clearH);
   var reboot = el('div', 'set-row focusable');
   reboot.dataset.act = 'reboot';
   reboot.innerHTML = '<div>' + esc('Перезагрузка приложения') +
@@ -2696,35 +2678,6 @@ function toggleSetting(row) {
   saveSetting(key, !s[key], FOCUS.settings.r);
 }
 
-function cyclePosterSize() {
-  var s = (state.settings && state.settings.settings) || {};
-  saveSetting('poster_size', s.poster_size === 'small' ? 'big' : 'small', FOCUS.settings.r);
-}
-
-/* Очистка истории — необратимая операция на аккаунте целиком, поэтому
-   через подтверждение, а не по одному OK */
-function confirmClearHistory() {
-  state.modal = 'confirm';
-  state.confirm = {
-    title: 'История просмотров',
-    text: 'Удалить всю историю на KinoPub? Действие необратимо и затронет все устройства аккаунта.',
-    okLabel: 'Очистить',
-    cur: 0,
-    onOk: function () {
-      api('/history/clear', { method: 'POST', body: {} })
-        .then(function () {
-          toast('История очищена');
-          if (state.screen === 'history') openHistory();
-        })
-        .catch(function (e) {
-          if (e && e.code === 'not_registered') { showRegister(); return; }
-          toast('Ошибка: ' + e.message);
-        });
-    }
-  };
-  renderModal();
-}
-
 /* Перезагрузка приложения с очисткой кэша. Чистим Cache Storage, если
    движок его отдаёт; HTTP-кэш самого клиента и так не кэшируется
    (no-cache в ответах сервера). localStorage НЕ трогаем — там id устройства */
@@ -2755,7 +2708,7 @@ function navAction(id) {
 /* ------------------- Модал выбора папки закладок ------------------- */
 
 /* state.modal: 'bookmarks' — выбор папок, 'newfolder' — создание папки
-   (экранная клавиатура), 'confirm' — подтверждение действия */
+   (экранная клавиатура) */
 function openBookmarkFolders() {
   state.modal = 'bookmarks';
   state.modalIdx = 0;
@@ -2765,19 +2718,6 @@ function openBookmarkFolders() {
 function renderModal() {
   var box = $('#modal-box');
   box.className = '';
-
-  if (state.modal === 'confirm') {
-    var c = state.confirm;
-    box.innerHTML =
-      '<div class="popup-title">' + esc(c.title) + '</div>' +
-      '<div class="confirm-text">' + esc(c.text) + '</div>' +
-      '<div class="confirm-btns">' +
-      '<button class="btn focusable' + (c.cur === 0 ? ' focused' : '') + '" data-cm="cancel">Отмена</button>' +
-      '<button class="btn primary focusable' + (c.cur === 1 ? ' focused' : '') + '" data-cm="ok">' + esc(c.okLabel || 'Подтвердить') + '</button>' +
-      '</div>';
-    $('#modal').classList.remove('hidden');
-    return;
-  }
 
   if (state.modal === 'newfolder') { renderNewFolder(); return; }
 
@@ -3019,8 +2959,6 @@ function activate() {
 
   if (state.screen === 'settings') {
     if (elm.dataset.act === 'reboot') return reloadApp();
-    if (elm.dataset.act === 'clear-history') return confirmClearHistory();
-    if (elm.dataset.set === 'poster_size') return cyclePosterSize();
     if (elm.dataset.set) return toggleSetting(elm);
   }
 
@@ -3118,21 +3056,6 @@ document.addEventListener('keydown', function (e) {
       e.preventDefault();
       return;
     }
-    if (state.modal === 'confirm') {
-      var c = state.confirm;
-      if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
-        c.cur = c.cur ? 0 : 1;
-        renderModal();
-      } else if (k === 'Enter') {
-        var fn = c.cur === 1 ? c.onOk : null;
-        closeModal();
-        if (fn) fn();
-      } else if (k === 'Backspace') {
-        closeModal();
-      } else return;
-      e.preventDefault();
-      return;
-    }
     /* newfolder */
     if (k === 'ArrowLeft') nfMove(-1, 0);
     else if (k === 'ArrowRight') nfMove(1, 0);
@@ -3220,9 +3143,6 @@ $('#stage').addEventListener('mouseover', function (e) {
     } else if (state.modal === 'newfolder') {
       var nk = e.target.closest('[data-nk]');
       if (nk && state.nf) { state.nf.sel = nk.dataset.nk; renderModal(); }
-    } else if (state.modal === 'confirm') {
-      var cm = e.target.closest('[data-cm]');
-      if (cm && state.confirm) { state.confirm.cur = cm.dataset.cm === 'ok' ? 1 : 0; renderModal(); }
     }
     return;
   }
@@ -3268,12 +3188,6 @@ $('#stage').addEventListener('click', function (e) {
       var nk = e.target.closest('[data-nk]');
       if (nk) nfPress(nk);
       else if (e.target.id === 'modal') closeModal();
-    } else if (state.modal === 'confirm') {
-      var cm = e.target.closest('[data-cm]');
-      var ok = cm && cm.dataset.cm === 'ok';
-      var fn = ok ? state.confirm.onOk : null;
-      closeModal();
-      if (fn) fn();
     }
     return;
   }
