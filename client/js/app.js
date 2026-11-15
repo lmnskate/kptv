@@ -1542,6 +1542,30 @@ function leaveMenu(rows, f) {
   f.c = Math.min(state.lastNavCol[state.screen] || 0, rows[f.r].length - 1);
 }
 
+/* Геометрический выбор клавиши в соседнем ряду клавиатуры: фокус идёт
+   на ключ, ближайший по горизонтали к текущему, а не на ключ с тем же
+   индексом (ряды разной длины и ширины — «столбцов» у клавиатуры нет).
+   Повторяет D-pad-навигацию Android TV (FocusFinder): кандидат должен
+   лежать строго в направлении движения, перекрывающие «луч» текущего
+   ключа бьют неперекрывающих, дальше веса 13*gap² + offset², как у
+   FocusFinder.getWeightedDistanceFor. Возвращает индекс в row или -1 */
+function nearestKbCol(fromEl, row, dy) {
+  var fr = fromEl.getBoundingClientRect();
+  var fx = (fr.left + fr.right) / 2;
+  var best = -1, bestScore = Infinity;
+  for (var i = 0; i < row.length; i++) {
+    var r = row[i].getBoundingClientRect();
+    if (dy < 0 && r.bottom >= fr.top) continue;
+    if (dy > 0 && r.top <= fr.bottom) continue;
+    var gap = dy < 0 ? fr.top - r.bottom : r.top - fr.bottom;
+    var off = Math.abs((r.left + r.right) / 2 - fx);
+    var overlap = r.left < fr.right && r.right > fr.left;
+    var score = (overlap ? 0 : 1e9) + 13 * gap * gap + off * off;
+    if (score < bestScore) { bestScore = score; best = i; }
+  }
+  return best;
+}
+
 function move(dx, dy) {
   var rows = ROWS[state.screen], f = FOCUS[state.screen];
   if (!rows.length) return;
@@ -1573,11 +1597,20 @@ function move(dx, dy) {
       enterMenu(rows, f);
     } else {
       /* ленты: смена строки — с первой карточки; сетки, табы и кнопки —
-         стандартные правила, колонка сохраняется */
+         стандартные правила, колонка сохраняется; клавиатура — по геометрии:
+         ряды разной ширины, сохранение индекса телепортировало фокус
+         в противоположный край следующего ряда */
       var newRow = rows[r];
       var isRail = newRow.length && newRow[0].closest('.track');
+      var geoCol = -1;
+      if (!isRail && newRow.length) {
+        var cur = rows[f.r][f.c];
+        var inKb = cur && cur.closest && cur.closest('.kb');
+        var toKb = newRow[0].closest && newRow[0].closest('.kb');
+        if (inKb || toKb) geoCol = nearestKbCol(cur, newRow, dy);
+      }
       f.r = r;
-      f.c = isRail ? 0 : Math.min(f.c, newRow.length - 1);
+      f.c = isRail ? 0 : (geoCol >= 0 ? geoCol : Math.min(f.c, newRow.length - 1));
     }
   } else if (dx) {
     var c = f.c + dx;
@@ -2848,10 +2881,22 @@ function nfMove(dx, dy) {
   }
   if (!cur) { state.nf.sel = keys[0].dataset.nk; renderModal(); return; }
   if (dx) {
-    var ni = ci + dx;
-    if (ni < 0 || ni >= keys.length) return;
-    state.nf.sel = keys[ni].dataset.nk;
-    renderModal();
+    /* строго внутри ряда: по плоскому списку ±1 уводило фокус с края
+       ряда на первый ключ следующего ряда */
+    var crr = cur.getBoundingClientRect();
+    var ccx = (crr.left + crr.right) / 2, ccy = (crr.top + crr.bottom) / 2;
+    var hor = null, horD = Infinity;
+    keys.forEach(function (k) {
+      if (k === cur) return;
+      var r = k.getBoundingClientRect();
+      var ky = (r.top + r.bottom) / 2;
+      if (Math.abs(ky - ccy) > r.height / 2 + 2) return; /* другой ряд */
+      if (dx < 0 && r.right >= crr.left) return;
+      if (dx > 0 && r.left <= crr.right) return;
+      var d = Math.abs((r.left + r.right) / 2 - ccx);
+      if (d < horD) { horD = d; hor = k; }
+    });
+    if (hor) { state.nf.sel = hor.dataset.nk; renderModal(); }
     return;
   }
   var cr = cur.getBoundingClientRect();
