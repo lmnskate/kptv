@@ -30,4 +30,21 @@ def get_migrations():
         """
     ALTER TABLE devices ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
     """,
+        # Per-device watch history (upstream /history is account-wide).
+        # season/episode are 0 for movies — NOT NULL keeps the PK dedupe.
+        """
+    CREATE TABLE IF NOT EXISTS device_history (
+        device_id TEXT NOT NULL,
+        item_id INTEGER NOT NULL,
+        season INTEGER NOT NULL DEFAULT 0,
+        episode INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        duration INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (device_id, item_id, season, episode)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_device_history_updated
+        ON device_history(device_id, updated_at);
+    """,
     ]

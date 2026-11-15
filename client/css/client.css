@@ -662,23 +662,23 @@ html, body {
 .pbtn svg { width: 26px; height: 26px; fill: currentColor; flex: none; }
 .pbtn.dim { opacity: .35; }
 
-/* play/pause — главная круглая кнопка */
+/* play/pause — главная круглая кнопка: в покое без цветовой подсветки,
+   иначе белая подложка читалась как застрявший ховер поверх реального фокуса */
 .pbtn-play {
   width: 92px; height: 92px;
   padding: 0; justify-content: center;
   border-radius: 50%;
-  background: #fff; color: #0b0e13;
 }
 .pbtn-play svg { width: 38px; height: 38px; }
 
-/* фокус кнопок плеера — акцентный, а не белый: белый совпал бы с цветом
-   кнопки play/pause и грань фокуса терялась бы */
 .pbtn.focused {
   background: var(--accent); color: #fff;
   transform: scale(1.1);
   box-shadow: 0 10px 34px rgba(0,0,0,.55);
 }
 .pbtn-play.focused { transform: scale(1.14); }
+/* приглушённая кнопка в фокусе остаётся приглушённой — действия нет */
+.pbtn.dim.focused { opacity: .65; }
 
 /* Попап выбора (аудио / субтитры / качество) */
 

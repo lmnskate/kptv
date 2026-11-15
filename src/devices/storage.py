@@ -27,6 +27,9 @@ connection = sqlite3.connect(
 # created_at column (0) are never touched.
 UNACTIVATED_TTL = 24 * 3600
 
+# History rows kept per device (the screen paginates 30 at a time).
+DEVICE_HISTORY_KEEP = 1000
+
 
 def cleanup_stale_devices():
     try:
@@ -35,6 +38,22 @@ def cleanup_stale_devices():
             'AND created_at < ?1',
             [int(time.time()) - UNACTIVATED_TTL]
         )
+        for (device_id,) in connection.execute(
+            'SELECT DISTINCT device_id FROM device_history'
+        ).fetchall():
+            connection.execute(
+                # COALESCE(…, 0) disables the delete while under the cap
+                """
+                DELETE FROM device_history
+                WHERE device_id = ?1
+                  AND updated_at <= COALESCE((
+                      SELECT updated_at FROM device_history
+                      WHERE device_id = ?1
+                      ORDER BY updated_at DESC
+                      LIMIT 1 OFFSET ?2), 0)
+                """,
+                [device_id, DEVICE_HISTORY_KEEP - 1]
+            )
     except sqlite3.OperationalError:
         # Table does not exist yet — the first migration will create it.
         pass
@@ -259,3 +278,125 @@ def add_domain(
     row = cursor.fetchone()
 
     return None if row is None else row[0]
+
+
+def record_device_history(
+    device_id,
+    item_id,
+    season,
+    episode,
+    position,
+    duration
+):
+    connection.execute(
+        """
+        INSERT INTO device_history
+            (device_id, item_id, season, episode, position, duration, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(device_id, item_id, season, episode) DO UPDATE SET
+            position = excluded.position,
+            duration = max(device_history.duration, excluded.duration),
+            updated_at = excluded.updated_at
+        """,
+        [
+            device_id,
+            item_id,
+            season or 0,
+            episode or 0,
+            position or 0,
+            duration or 0,
+            int(time.time())
+        ]
+    )
+
+
+def touch_device_history(
+    device_id,
+    item_id,
+    season,
+    episode,
+    position,
+    duration
+):
+    """The /play counterpart of record_device_history: never overwrite an
+    existing local position with the upstream one, only bump recency."""
+    connection.execute(
+        """
+        INSERT INTO device_history
+            (device_id, item_id, season, episode, position, duration, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(device_id, item_id, season, episode) DO UPDATE SET
+            duration = max(device_history.duration, excluded.duration),
+            updated_at = excluded.updated_at
+        """,
+        [
+            device_id,
+            item_id,
+            season or 0,
+            episode or 0,
+            position or 0,
+            duration or 0,
+            int(time.time())
+        ]
+    )
+
+
+def get_device_history_position(
+    device_id,
+    item_id,
+    season,
+    episode
+):
+    cursor = connection.execute(
+        """
+        SELECT position FROM device_history
+        WHERE device_id = ?1 AND item_id = ?2 AND season = ?3 AND episode = ?4
+        """,
+        [device_id, item_id, season or 0, episode or 0]
+    )
+    row = cursor.fetchone()
+
+    return None if row is None else row[0]
+
+
+def get_device_history(
+    device_id,
+    limit,
+    offset
+):
+    cursor = connection.execute(
+        """
+        SELECT item_id, season, episode, position, duration, updated_at
+        FROM device_history
+        WHERE device_id = ?1
+        ORDER BY updated_at DESC
+        LIMIT ?2 OFFSET ?3
+        """,
+        [device_id, limit, offset]
+    )
+
+    return [
+        {
+            'item_id': row[0],
+            'season': row[1],
+            'episode': row[2],
+            'position': row[3],
+            'duration': row[4],
+            'updated_at': row[5]
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def count_device_history(device_id):
+    return connection.execute(
+        'SELECT COUNT(*) FROM device_history WHERE device_id = ?1',
+        [device_id]
+    ).fetchone()[0]
+
+
+def clear_device_history(device_id):
+    connection.execute(
+        'DELETE FROM device_history WHERE device_id = ?1',
+        [device_id]
+    )

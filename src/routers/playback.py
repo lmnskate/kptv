@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 import viewmodels as vm
+from devices import storage
 from routers.deps import error, registered
 
 router = APIRouter(
@@ -79,7 +80,27 @@ async def play(
     if playable is None or not vm.stream_url(playable):
         return error(404, 'no_video', 'Видео недоступно')
 
-    return vm.playable_info(item, playable)
+    storage.touch_device_history(
+        current.id,
+        content_id,
+        playable.get('season'),
+        playable.get('number'),
+        (playable.get('watching') or {}).get('time') or 0,
+        playable.get('duration') or 0
+    )
+
+    info = vm.playable_info(item, playable)
+    # Per-device resume: the local row knows where THIS device stopped.
+    local_position = storage.get_device_history_position(
+        current.id,
+        content_id,
+        playable.get('season'),
+        playable.get('number')
+    )
+    if local_position:
+        info['position'] = local_position
+
+    return info
 
 
 @router.post('/progress')
@@ -99,5 +120,13 @@ async def progress(
         params['video'] = body.episode
 
     await current.kp.api('/watching/marktime', params)
+    storage.record_device_history(
+        current.id,
+        body.id,
+        body.season,
+        body.episode,
+        body.time,
+        0
+    )
 
     return {'ok': True}

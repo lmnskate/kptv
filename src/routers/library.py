@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 import viewmodels as vm
-from routers.browse import _enrich
+from devices import storage
 from routers.deps import error, registered
 
 router = APIRouter(
@@ -147,185 +147,72 @@ async def bookmark_toggle(
     }
 
 
-HISTORY_GROUPS_PER_PAGE = 30
-# Safety net against enormous histories: the aggregation reads every page,
-# which is bounded fan-out but still one upstream request per page.
-HISTORY_MAX_PAGES = 50
-HISTORY_FETCH_CONCURRENCY = 4
-# The client sweeps pages sequentially right after opening the screen; the
-# aggregate is expensive (all upstream history pages), so serve the sweep
-# from a short per-device cache instead of re-fetching per page request.
-_HISTORY_CACHE_TTL = 10
-_history_cache: dict = {}
+# Rows come from the local device_history table; only the cards are
+# enriched upstream (one /items request per row), cached per (device, page)
+# because the client sweeps pages sequentially when opening the screen.
+HISTORY_PER_PAGE = 30
+_LOCAL_HISTORY_TTL = 10
+_local_history_cache: dict = {}
 
 
-async def _history_pages(
-    kp
+def _drop_local_history_cache(device_id):
+    for key in [k for k in _local_history_cache if k[0] == device_id]:
+        _local_history_cache.pop(key)
+
+
+async def _local_history_page(
+    current,
+    page
 ):
-    """All /history pages, newest first, with bounded concurrency. None when
-    the first page fails (callers translate that to a 502)."""
-    first = await kp.api('/history', params={'page': 1})
-    if first is None:
-        return None
-
-    pages = [first]
-    try:
-        total = int((first.get('pagination') or {}).get('total') or 1)
-    except (TypeError, ValueError):
-        total = 1
-    total = max(1, min(total, HISTORY_MAX_PAGES))
-
-    if total > 1:
-        semaphore = asyncio.Semaphore(HISTORY_FETCH_CONCURRENCY)
-
-        async def _get(page):
-            async with semaphore:
-                return await kp.api('/history', params={'page': page})
-
-        pages.extend(await asyncio.gather(*[_get(p) for p in range(2, total + 1)]))
-
-    return pages
-
-
-def _history_card(
-    entry,
-    settings
-):
-    """View-model of one viewing event: the event's own item/media dicts are
-    full-fledged, and the newest event of a title is its resume point."""
-    media = entry.get('media') or {}
-    pct = vm.progress_pct(media.get('duration'), entry.get('time'))
-
-    card = vm.card(entry.get('item') or {}, settings)
-    # snumber is 0 for movies — keep it, multi-video movies use `number`.
-    if media.get('snumber') is not None:
-        card['media'] = {
-            'season': media.get('snumber'),
-            'number': media.get('number'),
-            'title': media.get('title'),
-        }
-    if pct:
-        card['progress'] = pct
-    card['in_progress'] = 0 < pct < 100
-
-    return card
-
-
-def _history_groups(
-    pages,
-    settings
-):
-    """Group viewing events by title: one card per title. The newest event
-    (max last_seen) defines recency, the subtitle and the progress bar, so a
-    serial binged over a month renders as a single «Season · Episode» card
-    instead of a screenful of per-episode rows. Entries arrive newest-first,
-    but compare stamps anyway — ties keep first-seen order (stable sort)."""
-    seen = set()
-    groups: dict = {}
-    order = []
-
-    for page in pages:
-        if not page:
-            continue
-        for entry in page.get('history') or []:
-            # `counter` is a per-item view counter, NOT a unique event id —
-            # it collides across items and even across episodes; identify an
-            # event by item + media + timestamp instead. Clamped out-of-range
-            # pages repeat the last page when the history shrinks mid-fetch,
-            # the triple dedupes those repeats.
-            media = entry.get('media') or {}
-            key = (
-                (entry.get('item') or {}).get('id'),
-                media.get('id'),
-                entry.get('last_seen')
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-
-            item = entry.get('item') or {}
-            item_id = item.get('id')
-            if item_id is None:
-                continue
-            stamp = entry.get('last_seen') or 0
-
-            group = groups.get(item_id)
-            if group is not None and stamp < group['stamp']:
-                continue
-
-            card = _history_card(entry, settings)
-            card['watched_at'] = stamp
-            if group is None:
-                group = {'idx': len(order), 'card': card, 'stamp': stamp}
-                order.append(item_id)
-                groups[item_id] = group
-            else:
-                group['card'] = card
-                group['stamp'] = stamp
-
-    ordered = sorted(
-        groups.values(),
-        key=lambda g: (-g['stamp'], g['idx'])
-    )
-
-    return [g['card'] for g in ordered]
-
-
-async def _history(
-    current
-):
-    """The full history as one flat, recency-sorted card list (see the
-    /history route). None when KinoPub is unreachable."""
+    """One page of the device's local history as render-ready cards, or None
+    when the enrichment source (KinoPub) is unreachable."""
     now = time.monotonic()
-    cached = _history_cache.get(current.id)
-    if cached is not None and now - cached[0] < _HISTORY_CACHE_TTL:
+    key = (current.id, page)
+    cached = _local_history_cache.get(key)
+    if cached is not None and now - cached[0] < _LOCAL_HISTORY_TTL:
         return cached[1]
 
-    kp = current.kp
-    pages, movies, serials = await asyncio.gather(
-        _history_pages(kp),
-        kp.api('/watching/movies'),
-        kp.api('/watching/serials', params={'subscribed': 0})
-    )
-    if pages is None:
-        return None
+    start = (page - 1) * HISTORY_PER_PAGE
+    rows = storage.get_device_history(current.id, HISTORY_PER_PAGE, start)
+    total = storage.count_device_history(current.id)
+    items = []
 
-    settings = current.settings
-    cards = _history_groups(pages, settings)
+    if rows:
+        detailed = await asyncio.gather(*[
+            current.kp.api(f'/items/{r["item_id"]}', params={'nolinks': 1})
+            for r in rows
+        ])
+        if all(full is None or 'item' not in full for full in detailed):
+            return None
 
-    # Started titles carry no recency stamp upstream, so they cannot join the
-    # chronological sort — they sit on top in KinoPub's own order. In
-    # practice nearly every started title also has history events (that's
-    # where its position lives), making this a rare edge case.
-    known = {c['id'] for c in cards}
-    started = [
-        i for i in ((movies or {}).get('items') or []) + ((serials or {}).get('items') or [])
-        if i.get('id') not in known
-    ]
-    if started:
-        started = await _enrich(kp, started)
-        started_cards = []
-        for item in started:
-            card = vm.card(item, settings)
-            card['in_progress'] = True
-            playable = vm.pick_playable(item)
-            if playable is not None:
-                position = (playable.get('watching') or {}).get('time') or 0
-                pct = vm.progress_pct(playable.get('duration'), position)
-                if playable.get('season') is not None:
-                    card['media'] = {
-                        'season': playable.get('season'),
-                        'number': playable.get('number'),
-                        'title': playable.get('title'),
-                    }
-                if pct:
-                    card['progress'] = pct
-            started_cards.append(card)
-        cards = started_cards + cards
+        settings = current.settings
+        for row, full in zip(rows, detailed):
+            # Titles withdrawn upstream just drop out of the local feed.
+            if full is None or 'item' not in full:
+                continue
+            card = vm.card(full['item'], settings)
+            if row['season']:
+                card['media'] = {
+                    'season': row['season'],
+                    'number': row['episode'],
+                }
+            pct = vm.progress_pct(row['duration'], row['position'])
+            if pct:
+                card['progress'] = pct
+            card['in_progress'] = 0 < pct < 100
+            card['watched_at'] = row['updated_at']
+            items.append(card)
 
-    _history_cache[current.id] = (now, cards)
+    payload = {
+        'items': items,
+        'page': page,
+        'has_more': start + HISTORY_PER_PAGE < total
+    }
+    if len(_local_history_cache) > 512:
+        _local_history_cache.clear()
+    _local_history_cache[key] = (now, payload)
 
-    return cards
+    return payload
 
 
 @router.get('/history')
@@ -333,35 +220,29 @@ async def history(
     request: Request,
     page: int = 1
 ):
+    """The device's own watch history: upstream /history is account-wide."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    cards = await _history(current)
-    if cards is None:
+    payload = await _local_history_page(current, max(1, page))
+    if payload is None:
         return error(502, 'upstream', 'KinoPub недоступен')
 
-    page = max(1, page)
-    start = (page - 1) * HISTORY_GROUPS_PER_PAGE
-
-    return {
-        'items': cards[start:start + HISTORY_GROUPS_PER_PAGE],
-        'page': page,
-        'has_more': start + HISTORY_GROUPS_PER_PAGE < len(cards)
-    }
+    return payload
 
 
 @router.post('/history/clear')
 async def history_clear(
     request: Request
 ):
+    """Wipe the device's local rows only — the shared account history stays."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    result = await current.kp.api('/watching/clearhistory', method='POST')
-    if result is None:
-        return error(502, 'upstream', 'KinoPub недоступен')
+    storage.clear_device_history(current.id)
+    _drop_local_history_cache(current.id)
 
     return {'ok': True}
 

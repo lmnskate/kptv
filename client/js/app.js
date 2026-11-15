@@ -2463,10 +2463,10 @@ function renderHistoryBody(done) {
   if (!shown.length) {
     if (!done) return;
     body.appendChild(emptyState('history',
-      historyItems.length ? 'В этой вкладке пусто' : 'История пуста',
+      historyItems.length ? 'В этой вкладке пусто' : 'На этом устройстве пока пусто',
       historyItems.length
         ? 'Переключитесь на другую вкладку'
-        : 'Начните смотреть — здесь появится начатое и просмотренное'));
+        : 'История собирается отдельно на каждом устройстве'));
     rebuildRows('history', false);
     return;
   }
@@ -2490,7 +2490,7 @@ function renderHistory() {
   var c = $('#history-content');
   c.innerHTML = '';
   ROWS.history = [topRow()];
-  c.appendChild(el('div', 'page-head', '<h1>История</h1><div class="sub">Начатое и просмотренное</div>'));
+  c.appendChild(el('div', 'page-head', '<h1>История</h1><div class="sub">Начатое и просмотренное на этом устройстве</div>'));
 
   var tabs = el('div', 'tabs');
   HISTORY_TABS.forEach(function (pair) {
