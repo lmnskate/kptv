@@ -1,0 +1,6 @@
+# Dev-only test dependencies for the tests/ suite. Never install into the
+# production image (src/requirements.txt is the runtime set installed by
+# the Dockerfile). httpx2 is what starlette's TestClient wants now — plain
+# httpx works but fires a deprecation warning on import.
+pytest==8.3.4
+httpx2==2.16.0

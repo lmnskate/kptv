@@ -9,7 +9,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.2.2-e8b339)
+![Version](https://img.shields.io/badge/version-1.3.0-e8b339)
 
 [Quick Start](#quick-start) •
 [Connecting a TV](#connecting-a-tv) •
@@ -111,6 +111,23 @@ run `./kptv.sh install` again (it is idempotent).
 ./kptv.sh admin export FILE     # dump the device DB (incl. tokens) to FILE
 ./kptv.sh admin import FILE     # replace the device DB with FILE (restarts the stack)
 ```
+
+## Tests
+
+Backend test suite (pytest), no network and no real KinoPub account needed
+(the upstream client is stubbed; each test runs against a fresh in-memory
+SQLite — the production DB is never touched):
+
+```bash
+.venv/bin/pip install -r tests/requirements.txt
+.venv/bin/pytest
+```
+
+Coverage: media-proxy allowlist/redirect re-validation, HLS playlist
+rewriting, SRT→WebVTT; viewmodel shaping and stream selection; SQLite
+migrations and device history; the `/api/v1` HTTP contract (device auth,
+error envelope, registration flow). The TV client JS has no automated tests
+yet — ES5 without a build step doesn't lend itself to the usual JS runners.
 
 ## Configuration
 
@@ -256,6 +273,7 @@ client/             # Smart TV SPA (vanilla ES5 JS, no build step)
     index.html
     css/ js/        # js/hls.min.js is vendored and lazy-loaded at first playback
 cli/                # kptv.sh admin subcommand tree (list/delete/reset/export/import devices)
+tests/              # pytest suite (proxy, viewmodels, storage, API contract)
 docs/               # API contract + historical plan
 conf/               # nginx config (HTTPS-only: app on 443, redirect on 80)
 data/               # SQLite DB + letsencrypt (bind-mounted, gitignored)
