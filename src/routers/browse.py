@@ -67,6 +67,40 @@ async def _enrich(
     return result
 
 
+def _continue_media(
+    item
+):
+    """Resume pointer for a «Продолжить просмотр» card: the episode/video
+    pick_playable would start, with its saved position. None when the title
+    has no watch activity at all — a never-started entry is not «продолжить»
+    (and the client drops cards without a resume point anyway)."""
+    playable = vm.pick_playable(item)
+    if playable is None:
+        return None
+    position = (playable.get('watching') or {}).get('time') or 0
+    if position <= 0:
+        # Between episodes (the next one is at 0:00): still a resume point,
+        # but only when something in the title was actually watched.
+        watched_any = any(
+            e.get('watched') == 1
+            for s in item.get('seasons') or []
+            for e in s.get('episodes') or []
+        ) or any(
+            v.get('watched') == 1
+            for v in item.get('videos') or []
+        )
+        if not watched_any:
+            return None
+
+    return {
+        'season': playable.get('season'),
+        'number': playable.get('number'),
+        'title': playable.get('title'),
+        'duration': playable.get('duration'),
+        'time': position,
+    }
+
+
 def _paged(
     result,
     page
@@ -123,12 +157,17 @@ async def home(
     best = (best_movies or {}).get('items', []) + (best_serials or {}).get('items', [])
 
     settings = current.settings
+    continue_cards = []
+    for i in continue_items:
+        media = _continue_media(i)
+        if media is not None:
+            continue_cards.append(vm.card(i, settings, media=media))
     rails = []
-    if continue_items:
+    if continue_cards:
         rails.append({
             'id': 'continue',
             'title': 'Продолжить просмотр',
-            'items': [vm.card(i, settings) for i in continue_items]
+            'items': continue_cards
         })
     if fresh:
         rails.append({

@@ -217,16 +217,10 @@ function fmtRel(ts) {
   return fmtTs(ts);
 }
 
-function kpClass(kp) {
-  if (kp == null) return '';
-  return kp >= 7.5 ? 'good' : kp >= 6 ? 'mid' : 'low';
-}
-
 function kpBadge(t) {
-  var parts = [];
-  if (t.kp != null) parts.push('<span class="rate kp ' + kpClass(t.kp) + '">' + t.kp.toFixed(1) + '</span>');
-  if (t.imdb != null) parts.push('<span class="rate imdb">IMDb ' + t.imdb.toFixed(1) + '</span>');
-  return parts.join('');
+  /* показываем только IMDb: рейтинг Кинопоиска для пользователя неважен */
+  if (t.imdb == null) return '';
+  return '<span class="rate imdb">IMDb ' + t.imdb.toFixed(1) + '</span>';
 }
 
 function typeLabel(t) { return TYPE_LABELS[t.type] || t.type || ''; }
@@ -248,7 +242,6 @@ function adaptCard(c) {
     name: c.title,
     type: c.type,
     year: c.year || null,
-    kp: fnum(c.kinopoisk_rating),
     imdb: fnum(c.imdb_rating),
     q4k: !!c.is_4k,
     poster: c.poster || null,
@@ -315,7 +308,7 @@ function posterCard(t) {
     (t.newEpisodes ? '<div class="badge-new">' + t.newEpisodes + ' нов.</div>' : '') +
     '</div>' +
     '<div class="card-title">' + esc(t.name) + '</div>' +
-    '<div class="card-sub">' + (t.year || '') + (t.kp != null ? ' · ★ <b>' + t.kp.toFixed(1) + '</b>' : '') + '</div>';
+    '<div class="card-sub">' + (t.year || '') + (t.imdb != null ? ' · ★ <b>' + t.imdb.toFixed(1) + '</b>' : '') + '</div>';
   return c;
 }
 
@@ -324,6 +317,11 @@ function continueCard(t) {
   c.dataset.kind = 'watch';
   c.dataset.id = t.id;
   var g = grad(t, 140);
+  var sub = t.subtitle || 'Продолжить просмотр';
+  if (t.media && t.media.season != null) {
+    /* как в истории: «Сезон · Серия» точки возобновления */
+    sub = 'Сезон ' + t.media.season + ' · Серия ' + t.media.number;
+  }
   c.innerHTML =
     '<div class="cw-art" style="background:' + g + '"' + artAttrs(t.backdrop || t.poster, g) + '>' +
     '<div class="cw-shade"></div>' +
@@ -331,7 +329,7 @@ function continueCard(t) {
     '<div class="cw-name">' + esc(t.name) + '</div>' +
     '<div class="cw-progress"><i style="width:' + t.progressPct + '%"></i></div>' +
     '</div>' +
-    '<div class="card-sub">' + esc(t.subtitle || 'Продолжить просмотр') + '</div>';
+    '<div class="card-sub">' + esc(sub) + '</div>';
   return c;
 }
 
@@ -453,7 +451,9 @@ function renderHome() {
 
   rails.forEach(function (r) {
     if (r.id === 'continue') {
-      var items = r.items.map(adaptCard).filter(function (t) { return t.progressPct > 0; });
+      /* карточка с точкой возобновления: прогресс > 0 либо (между сериями)
+         указатель на следующую серию с нулевой позицией */
+      var items = r.items.map(adaptCard).filter(function (t) { return t.progressPct > 0 || t.media; });
       items.forEach(remember);
       if (items.length) c.appendChild(rail('Продолжить просмотр', items.map(continueCard)));
     } else {
@@ -709,11 +709,12 @@ function applyQualityPref(hls) {
       }
     }
   }
-  /* сохранённое качество в этом манифесте отсутствует — дефолт */
+  /* сохранённое качество в этом манифесте отсутствует — дефолт.
+     qualityH не трогаем: это стартовый пин уровня, а не ручной выбор —
+     иначе попап качества показывал бы «804p ✓» в режиме «Авто» */
   var ix = pickDefaultLevel(levels);
   if (ix >= 0) {
     hls.currentLevel = ix;
-    state.qualityH = levels[ix].height || null;
   }
 }
 
@@ -806,8 +807,14 @@ function autoNextTick() {
 function renderAutoNext() {
   var an = state.autoNext;
   if (!an) return;
-  var cnt = document.getElementById('an-count');
-  if (cnt) cnt.textContent = an.left;
+  /* какая серия дальше — «Сезон 2 · Серия 1 начнётся через N», иначе
+     отсчёт висел без контекста */
+  var t = state.title;
+  var se = t && t.seasons && t.seasons[an.s];
+  var ep = se && se.episodes[an.e];
+  var what = (se && ep) ? 'Сезон ' + se.n + ' · Серия ' + ep.n : 'Следующая серия';
+  var line = document.querySelector('#player-autonext .an-line');
+  if (line) line.innerHTML = esc(what) + ' начнётся через <b id="an-count">' + an.left + '</b>';
   var btns = document.querySelectorAll('#player-autonext .btn');
   for (var i = 0; i < btns.length; i++) {
     btns[i].classList.toggle('focused', i === an.cur);
@@ -851,9 +858,14 @@ function togglePlay() {
 function updatePlayerUI() {
   var t = state.title;
   var info = state.playInfo;
-  $('#pv-title').textContent = info.title || (t && t.name) || '';
+  /* главная строка — всегда имя тайтла: /play отдаёт в title название
+     серии («Недотёпство заразно»), и имя шоу терялось */
+  var name = (t && t.name) || info.title || '';
+  $('#pv-title').textContent = name;
   if (info.season != null) {
-    $('#pv-ep').textContent = 'Сезон ' + info.season + ' · Серия ' + info.episode;
+    var line = 'Сезон ' + info.season + ' · Серия ' + info.episode;
+    if (info.title && info.title !== name) line += ' · ' + info.title;
+    $('#pv-ep').textContent = line;
   } else {
     /* фильмы/мультфильмы без второй строки: «год · тип» под названием
        читалось как мусор — для сериалов остаётся сезон/серия */
@@ -1046,27 +1058,42 @@ function langName(code) {
   return LANG_NAMES[key] || String(code).toUpperCase();
 }
 
-/* Группировка пунктов попапа по языку (как в официальном плеере KinoPub).
-   Пункты сохраняют исходный порядок — data-i и индексы дорожек не сбиваются,
-   между группами вставляются неселективные заголовки. Пункты без языка
-   («Выкл») выводятся первыми без заголовка; одна группа — без заголовков */
-function groupRows(items, langs) {
+/* Порядок пунктов попапа (аудио/субтитры): безъязычные первыми («Выкл»,
+   «По умолчанию»), затем группы по языку — русская всегда первая, остальные
+   в порядке первого появления; внутри группы исходный порядок сохраняется.
+   Возвращает перестановку исходных индексов: seq[позиция на экране] =
+   исходный индекс пункта. Список сортируется целиком — курсор ходит по
+   экранному порядку и никуда не «прыгает» */
+function groupOrder(langs) {
   var flat = [];
   var groups = {}, order = [];
-  items.forEach(function (label, i) {
-    var row = { label: label, i: i };
-    if (!langs[i]) { flat.push(row); return; }
-    var g = langName(langs[i]);
+  langs.forEach(function (lang, i) {
+    if (!lang) { flat.push(i); return; }
+    var g = langName(lang);
     if (!groups[g]) { groups[g] = []; order.push(g); }
-    groups[g].push(row);
+    groups[g].push(i);
   });
-  if (!order.length || order.length === 1 && !flat.length) {
-    return flat.concat(order.length ? groups[order[0]] : []);
-  }
-  var rows = flat.slice();
-  order.forEach(function (g) {
-    rows.push({ head: g });
-    rows = rows.concat(groups[g]);
+  var ru = order.indexOf('Русский');
+  if (ru > 0) { order.splice(ru, 1); order.unshift('Русский'); }
+  var seq = flat.slice();
+  order.forEach(function (g) { seq = seq.concat(groups[g]); });
+  return seq;
+}
+
+/* Строки попапа по уже упорядоченным пунктам: при нескольких языковых
+   группах между ними вставляются неселективные заголовки. i пункта — его
+   позиция в items (экранный порядок); выбор маппится на исходный индекс
+   дорожки через origs из popupConfig */
+function groupRows(items, langs) {
+  var distinct = {};
+  langs.forEach(function (lang) { if (lang) distinct[langName(lang)] = 1; });
+  var multi = Object.keys(distinct).length > 1;
+  var rows = [], lastG = null;
+  items.forEach(function (label, i) {
+    var g = langs[i] ? langName(langs[i]) : null;
+    if (multi && g && g !== lastG) rows.push({ head: g });
+    if (g) lastG = g;
+    rows.push({ label: label, i: i });
   });
   return rows;
 }
@@ -1074,17 +1101,36 @@ function groupRows(items, langs) {
 function popupConfig(kind) {
   if (kind === 'subs') {
     var opts = subtitleOptions();
-    var items = opts.map(function (o) { return o.label; });
     var langs = opts.map(function (o) { return o.lang; });
-    return { title: 'Субтитры', items: items, current: state.subs, rows: groupRows(items, langs) };
+    var seqS = groupOrder(langs);
+    var items = seqS.map(function (oi) { return opts[oi].label; });
+    return {
+      title: 'Субтитры', items: items, origs: seqS, current: state.subs,
+      rows: groupRows(items, seqS.map(function (oi) { return langs[oi]; }))
+    };
   }
   if (kind === 'audio') {
     var tracks = state.hls && state.hls.audioTracks ? state.hls.audioTracks : [];
-    if (!tracks.length) return { title: 'Аудиодорожка', items: ['По умолчанию'], current: 'По умолчанию' };
-    var names = tracks.map(function (tr, i) { return tr.name || ('Дорожка ' + (i + 1)); });
+    if (!tracks.length) return { title: 'Аудиодорожка', items: ['По умолчанию'], origs: [0], current: 'По умолчанию' };
     var langsA = tracks.map(function (tr) { return tr.lang || null; });
-    var cur = tracks[state.hls.audioTrack] ? (tracks[state.hls.audioTrack].name || names[state.hls.audioTrack]) : names[0];
-    return { title: 'Аудиодорожка', items: names, current: cur, rows: groupRows(names, langsA) };
+    var seqA = groupOrder(langsA);
+    /* безымянные дорожки нумеруются по порядку внутри своей языковой
+       группы — без исходных «прыгающих» номеров манифеста */
+    var counters = {};
+    var names = seqA.map(function (oi) {
+      var tr = tracks[oi];
+      if (tr.name) return tr.name;
+      var g = langsA[oi] ? langName(langsA[oi]) : '';
+      counters[g] = (counters[g] || 0) + 1;
+      return 'Дорожка ' + counters[g];
+    });
+    var curIdx = seqA.indexOf(state.hls.audioTrack);
+    if (curIdx < 0) curIdx = 0;
+    return {
+      title: 'Аудиодорожка', items: names, origs: seqA, currentIdx: curIdx,
+      current: names[curIdx],
+      rows: groupRows(names, seqA.map(function (oi) { return langsA[oi]; }))
+    };
   }
   if (kind === 'quality') {
     if (!state.hls || !state.hls.levels || !state.hls.levels.length) {
@@ -1104,7 +1150,7 @@ function popupConfig(kind) {
 function openPopup(kind) {
   state.popup = kind;
   var cfg = popupConfig(kind);
-  state.popupIdx = Math.max(0, cfg.items.indexOf(cfg.current));
+  state.popupIdx = cfg.currentIdx != null ? cfg.currentIdx : Math.max(0, cfg.items.indexOf(cfg.current));
   renderPopup();
 }
 
@@ -1112,12 +1158,13 @@ function renderPopup() {
   var cfg = popupConfig(state.popup);
   if (!cfg) return;
   var rows = cfg.rows || cfg.items.map(function (label, i) { return { label: label, i: i }; });
+  var sel = cfg.currentIdx != null ? cfg.currentIdx : Math.max(0, cfg.items.indexOf(cfg.current));
   var p = $('#player-popup');
   p.innerHTML = '<div class="popup-title">' + esc(cfg.title) + '</div>' +
     '<div class="popup-scroll">' + rows.map(function (r) {
       if (r.head !== undefined) return '<div class="popup-head">' + esc(r.head) + '</div>';
-      return '<div class="popup-item' + (cfg.current === r.label ? ' sel' : '') + (r.i === state.popupIdx ? ' cur' : '') + '" data-i="' + r.i + '">' +
-        esc(r.label) + (cfg.current === r.label ? ' ✓' : '') + '</div>';
+      return '<div class="popup-item' + (r.i === sel ? ' sel' : '') + (r.i === state.popupIdx ? ' cur' : '') + '" data-i="' + r.i + '">' +
+        esc(r.label) + (r.i === sel ? ' ✓' : '') + '</div>';
     }).join('') + '</div>';
   // список может не влезать в экран — держим текущий пункт в видимой зоне
   var sc = p.querySelector('.popup-scroll');
@@ -1135,7 +1182,7 @@ function selectPopup(i) {
     toast('Субтитры: ' + value);
   } else if (kind === 'audio') {
     if (state.hls && state.hls.audioTracks && state.hls.audioTracks.length) {
-      state.hls.audioTrack = i;
+      state.hls.audioTrack = cfg.origs ? cfg.origs[i] : i;
       saveTrackPref('audio', value);
       toast('Аудиодорожка: ' + value);
     } else {
@@ -2487,7 +2534,8 @@ function historyCard(t) {
   var c = posterCard(t);
   var sub = c.querySelector('.card-sub');
   var parts = [];
-  if (t.type === 'serial' && t.media && t.media.season != null) {
+  /* isSerial, а не type === 'serial': docuserial/tvshow тоже с сезонами */
+  if (isSerial(t) && t.media && t.media.season != null) {
     parts.push('Сезон ' + t.media.season + ' · Серия ' + t.media.number);
   } else if (t.year) {
     parts.push(String(t.year));
@@ -2505,7 +2553,8 @@ function historyCard(t) {
 
 function historyFiltered() {
   if (historyTab === 'all') return historyItems;
-  return historyItems.filter(function (t) { return t.type === historyTab; });
+  if (historyTab === 'serial') return historyItems.filter(isSerial);
+  return historyItems.filter(function (t) { return !isSerial(t); });
 }
 
 /* Сетка создаётся один раз и дальше дорисовывается инкрементально —
@@ -2525,7 +2574,8 @@ function historyGrid() {
 function appendHistoryCards(list) {
   var grid = historyGrid();
   list.forEach(function (t) {
-    if (historyTab !== 'all' && t.type !== historyTab) return;
+    if (historyTab === 'serial' && !isSerial(t)) return;
+    if (historyTab === 'movie' && isSerial(t)) return;
     grid.appendChild(historyCard(t));
   });
 }
@@ -2684,7 +2734,9 @@ function renderSettings() {
   var rows = el('div', 'set-rows');
   rows.appendChild(setToggleRow('uhd', '4K (Ultra HD)', 'Запрашивать 4K-стримы, если доступны', !!s.uhd));
   rows.appendChild(setToggleRow('hdr', 'HDR', 'HDR-версии видео', !!s.hdr));
-  rows.appendChild(setToggleRow('hevc', 'HEVC (H.265)', 'Экономит трафик при том же качестве', !!s.hevc));
+  /* HEVC — не настройка: флаг на KinoPub выравнивается автоматически под
+     реальную поддержку браузера при каждом воспроизведении, ручной тумблер
+     всё равно перезаписывался */
   c.appendChild(rows);
 
   var acts = el('div', 'set-rows set-acts');
@@ -3015,8 +3067,11 @@ function toggleWatched(btn) {
       if (t.videos) {
         t.videos.forEach(function (v) { v.watched = t.watched; });
       }
+      /* фокус остаётся на «Просмотрено», а не перескакивает на «Смотреть»:
+         позицию берём до перерисовки (старые узлы отсоединяются) */
+      var pos = locate(ROWS.detail, btn);
       renderDetail();
-      FOCUS.detail = { r: 0, c: 0 };
+      FOCUS.detail = pos || { r: 0, c: 0 };
       applyFocus();
       toast(t.watched ? 'Отмечено как просмотренное' : 'Отмечено как непросмотренное');
     })

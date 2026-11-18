@@ -364,12 +364,21 @@ def get_device_history(
     limit,
     offset
 ):
+    # One row per title: a serial's episode rows collapse into the newest
+    # viewing event (its season/episode become the card's «Сезон · Серия»),
+    # otherwise watching two episodes would list the same serial twice.
     cursor = connection.execute(
         """
-        SELECT item_id, season, episode, position, duration, updated_at
-        FROM device_history
-        WHERE device_id = ?1
-        ORDER BY updated_at DESC
+        SELECT h.item_id, h.season, h.episode, h.position, h.duration, h.updated_at
+        FROM device_history h
+        WHERE h.device_id = ?1
+          AND h.rowid = (
+              SELECT h2.rowid FROM device_history h2
+              WHERE h2.device_id = ?1 AND h2.item_id = h.item_id
+              ORDER BY h2.updated_at DESC, h2.rowid DESC
+              LIMIT 1
+          )
+        ORDER BY h.updated_at DESC, h.rowid DESC
         LIMIT ?2 OFFSET ?3
         """,
         [device_id, limit, offset]
@@ -390,7 +399,7 @@ def get_device_history(
 
 def count_device_history(device_id):
     return connection.execute(
-        'SELECT COUNT(*) FROM device_history WHERE device_id = ?1',
+        'SELECT COUNT(DISTINCT item_id) FROM device_history WHERE device_id = ?1',
         [device_id]
     ).fetchone()[0]
 

@@ -100,7 +100,9 @@ class TestCard:
         card = vm.card(kp_item(1), device_settings, media={'time': 10, 'duration': 60})
         assert 'subtitle' not in card
         assert 'media' not in card
-        assert 'progress' not in card
+        # movies carry no «Сезон · Серия», but the resume percentage
+        # is what fills the «Продолжить просмотр» rail
+        assert card['progress'] == 17
 
     def test_unstarted_episode_has_no_progress(self, device_settings):
         media = {'season': 1, 'number': 1, 'duration': 100, 'time': 0}

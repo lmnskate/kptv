@@ -418,9 +418,6 @@ html, body {
 }
 
 .rate { font-weight: 800; }
-.rate.kp.good { color: var(--good); }
-.rate.kp.mid { color: var(--mid); }
-.rate.kp.low { color: var(--low); }
 .rate.imdb { color: var(--muted); font-weight: 600; }
 
 .uhd {
@@ -868,8 +865,10 @@ html, body {
 .kb .kb-key[data-kb="layout"] { font-weight: 800; letter-spacing: 1px; flex: 1 1 0; }
 .kb .kb-key[data-kb="space"] { flex: 3 1 0; }
 .kb .kb-key[data-kb="clear"] { flex: 1.8 1 0; }
-.kb .kb-key[data-kb="go"] { flex: 1.5 1 0; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
-.kb-key[data-kb="go"].focused { background: #fff; border-color: #fff; color: #0b0e13; }
+/* «Найти» — обычный тёмный ключ, оранжевым становится только в фокусе:
+   постоянный акцентный фон читался на ТВ как второй фокусный элемент */
+.kb .kb-key[data-kb="go"] { flex: 1.5 1 0; font-weight: 700; }
+.kb-key[data-kb="go"].focused { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* ---------- Настройки ---------- */
 

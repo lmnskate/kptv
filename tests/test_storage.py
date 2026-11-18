@@ -118,10 +118,15 @@ class TestHistory:
         storage.record_device_history('tv-1', 100, 0, 0, position=20, duration=300)
         assert storage.get_device_history('tv-1', 30, 0)[0]['duration'] == 600
 
-    def test_episodes_kept_separately(self, fresh_db):
+    def test_episodes_collapse_to_newest(self, fresh_db):
+        """One card per title: a serial's episode rows collapse into the
+        newest viewing event (ties break by insertion order)."""
         storage.record_device_history('tv-1', 100, 1, 1, position=1, duration=100)
         storage.record_device_history('tv-1', 100, 2, 1, position=1, duration=100)
-        assert len(storage.get_device_history('tv-1', 30, 0)) == 2
+        rows = storage.get_device_history('tv-1', 30, 0)
+        assert len(rows) == 1
+        assert (rows[0]['season'], rows[0]['episode']) == (2, 1)
+        assert storage.count_device_history('tv-1') == 1
 
     def test_touch_never_overwrites_position(self, fresh_db):
         storage.record_device_history('tv-1', 100, 0, 0, position=300, duration=600)

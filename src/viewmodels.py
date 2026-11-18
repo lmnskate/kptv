@@ -46,8 +46,10 @@ def card(
         'type': item.get('type'),
         'title': item.get('title'),
         'year': item.get('year'),
-        'kinopoisk_rating': item.get('kinopoisk_rating'),
-        'imdb_rating': item.get('imdb_rating'),
+        # upstream marks unrated titles with 0 — render as "no rating",
+        # otherwise cards show a bogus «★ 0.0»
+        'kinopoisk_rating': item.get('kinopoisk_rating') or None,
+        'imdb_rating': item.get('imdb_rating') or None,
         'poster': poster_url(item, settings),
         'is_4k': item.get('quality') == 2160,
         'new_episodes': item.get('new'),
@@ -57,19 +59,22 @@ def card(
     if backdrop:
         result['backdrop'] = backdrop
 
-    if media is not None and media.get('season'):
-        season = media['season']
-        number = media.get('number')
-        title = media.get('title')
-        result['subtitle'] = f'[S{season}/E{number}] {title}'
-        result['media'] = {
-            'season': season,
-            'number': number,
-            'title': title,
-        }
+    if media is not None:
+        # Прогресс — и для фильмов (у них нет season); «Сезон · Серия»
+        # и subtitle — только для сериалов.
         pct = progress_pct(media.get('duration'), media.get('time'))
         if pct:
             result['progress'] = pct
+        if media.get('season'):
+            season = media['season']
+            number = media.get('number')
+            title = media.get('title')
+            result['subtitle'] = f'[S{season}/E{number}] {title}'
+            result['media'] = {
+                'season': season,
+                'number': number,
+                'title': title,
+            }
 
     return result
 
