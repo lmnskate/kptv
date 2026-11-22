@@ -1,7 +1,6 @@
 # Project state
 data/*
 backups/
-docs/*
 .env
 .venv/
 
