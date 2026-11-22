@@ -247,9 +247,9 @@ class TestPlayableInfo:
         assert info['duration'] == 3000
         assert info['position'] == 600
         assert info['watched'] is False
-        assert '/api/v1/proxy?url=' in info['url']
-        assert 'cdn.test%2Fv.m3u8' in info['url']
-        assert '/api/v1/proxy?url=' in info['thumbnail']
+        # the stream goes straight to the CDN; only subtitles use the proxy
+        assert info['url'] == 'https://cdn.test/v.m3u8'
+        assert info['thumbnail'] == 'https://cdn.test/thumb.jpg'
         assert [s['label'] for s in info['subtitles']] == ['RUS #01', 'ENG #02']
         assert all('/api/v1/subtitle?url=' in s['url'] for s in info['subtitles'])
 

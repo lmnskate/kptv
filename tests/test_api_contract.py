@@ -188,6 +188,28 @@ class TestSettings:
         assert response.status_code == 401
 
 
+class TestPlay:
+    def _item(self, item_id):
+        item = kp_item(item_id)
+        item['videos'] = [{
+            'number': 1,
+            'duration': 3000,
+            'files': [{'quality': '1080p', 'url': {'hls4': 'https://cdn.kino.test/v.m3u8'}}],
+        }]
+        return item
+
+    def test_stream_url_is_the_direct_cdn_link(self, client, registered_device):
+        registered_device.kp.responses['/items/7'] = {'item': self._item(7)}
+        response = client.get('/api/v1/play/7', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        body = response.json()
+        assert body['url'] == 'https://cdn.kino.test/v.m3u8'
+        # subtitles still flow through the converting proxy
+        assert body['subtitles'] == [] or all(
+            '/api/v1/subtitle?url=' in s['url'] for s in body['subtitles']
+        )
+
+
 class TestCatalog:
     def test_bad_section_is_400(self, client, registered_device):
         response = client.get('/api/v1/catalog?section=hot', headers=DEVICE_HEADER)

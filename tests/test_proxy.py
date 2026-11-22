@@ -259,7 +259,10 @@ class TestGetPlaylist:
         status, content_type, response_headers, content = asyncio.run(proxy.get(url))
         assert status == 200
         assert 'mpegurl' in content_type
-        assert response_headers['Content-Length'] == '42'
+        # The header must describe the REWRITTEN body, not the upstream one:
+        # a stale upstream Content-Length severs the connection mid-response
+        # or truncates the playlist for the client.
+        assert response_headers['Content-Length'] == str(len(content))
         assert proxied('https://cdn.kino.test/vod/seg1.ts').encode() in content
         # nothing left as a bare relative line
         assert b'\nseg1.ts\n' not in content

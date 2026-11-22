@@ -355,6 +355,12 @@ async def get(
             )
 
         encoded = text_content.encode('utf-8')
+        # The rewritten playlist has a different length than the upstream
+        # body (proxied URLs are longer, audio filtering shorter). Sending
+        # the upstream Content-Length desyncs the response: h11 aborts the
+        # connection when the body exceeds it (clients see a truncated or
+        # empty playlist), and a too-large value hangs the client.
+        response_headers['Content-Length'] = str(len(encoded))
         if not request_headers and (audio_name or _is_vod_playlist(text_content)):
             _cache_playlist(cache_key, (
                 time.monotonic(),

@@ -56,7 +56,8 @@ async def play(
 ):
     """Resolve a title to a playable stream: picks the episode/video (explicit
     or first unfinished), chooses the best file by quality/protocol, and
-    returns proxied URLs plus subtitles (WebVTT via /api/v1/subtitle)."""
+    returns the direct CDN stream URL plus subtitles (WebVTT via
+    /api/v1/subtitle, which still proxies and converts them)."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')

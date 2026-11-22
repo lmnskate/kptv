@@ -1,8 +1,8 @@
 """View-model shaping: raw KinoPub response dicts -> render-ready payloads
-for the web client. Stream/subtitle URLs are routed through the allowlist
-proxy (see services/proxy.py); posters go directly to the CDN — the TV
-network reaches it fine and proxying every image through the single-worker
-backend made grids crawl."""
+for the web client. Posters and stream URLs go straight to the CDN — the
+player's network reaches it, and relaying video through the single-worker
+backend only added latency and VPS traffic. Only subtitles still use the
+allowlist proxy (see services/proxy.py), for the SRT->WebVTT conversion."""
 
 import config.globals as g
 from config.settings import kp
@@ -217,7 +217,10 @@ def playable_info(
     item,
     playable
 ):
-    """Playback payload for the client player."""
+    """Playback payload for the client player. The stream URL goes straight
+    to the CDN — the player's network reaches it, and skipping the relay
+    saves the VPS a few GB per viewing. Subtitles still flow through the
+    proxy (it converts SRT to WebVTT)."""
     watching = playable.get('watching') or {}
     watched = playable.get('watched') == 1
 
@@ -239,10 +242,10 @@ def playable_info(
         'duration': playable.get('duration'),
         'position': watching.get('time') or 0,
         'watched': watched,
-        'url': proxy.make_proxy_url(stream_url(playable)),
+        'url': stream_url(playable),
         'subtitles': subtitles,
     }
     if playable.get('thumbnail'):
-        result['thumbnail'] = proxy.make_proxy_url(playable['thumbnail'])
+        result['thumbnail'] = playable['thumbnail']
 
     return result

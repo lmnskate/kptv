@@ -2,7 +2,7 @@
 
 # KPTV
 
-**Watch [KinoPub](https://kino.pub) on your Smart TV — own flagship web client
+**Watch [KinoPub](https://kino.watch) on your Smart TV — own flagship web client
 (Samsung Tizen, LG webOS) with a FastAPI backend**
 
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
