@@ -1,6 +1,8 @@
 """View-model shaping: raw KinoPub response dicts -> render-ready payloads
-for the web client. All media/poster URLs are routed through the allowlist
-proxy (see services/proxy.py)."""
+for the web client. Stream/subtitle URLs are routed through the allowlist
+proxy (see services/proxy.py); posters go directly to the CDN — the TV
+network reaches it fine and proxying every image through the single-worker
+backend made grids crawl."""
 
 import config.globals as g
 from config.settings import kp
@@ -27,11 +29,9 @@ def poster_url(
     wide=False
 ):
     posters = item.get('posters') or {}
-    url = posters.get('wide') if wide else (posters.get(settings.poster_size) or posters.get('big'))
-    if not url:
-        return None
-
-    return proxy.make_proxy_url(url)
+    if wide:
+        return posters.get('wide')
+    return posters.get(settings.poster_size) or posters.get('big')
 
 
 def card(

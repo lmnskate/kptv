@@ -230,7 +230,7 @@ class TestCatalog:
         body = response.json()
         assert body['has_more'] is True
         assert [i['id'] for i in body['items']] == [1, 2]
-        assert '/api/v1/proxy?url=' in body['items'][0]['poster']
+        assert body['items'][0]['poster'] == 'https://cdn.kino.test/posters/1/big.jpg'
 
     def test_filters_accept_bare_arrays_and_wrapped_items(self, client, registered_device):
         registered_device.kp.responses = {

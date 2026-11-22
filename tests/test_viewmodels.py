@@ -47,29 +47,25 @@ class TestPosterUrl:
     def test_prefers_configured_size(self, device_settings):
         item = {'posters': {'small': 'https://cdn.test/s.jpg', 'big': 'https://cdn.test/b.jpg'}}
         device_settings.poster_size = 'small'
-        assert vm.poster_url(item, device_settings).endswith(
-            'url=https%3A%2F%2Fcdn.test%2Fs.jpg'
-        )
+        assert vm.poster_url(item, device_settings) == 'https://cdn.test/s.jpg'
 
     def test_falls_back_to_big(self, device_settings):
         item = {'posters': {'big': 'https://cdn.test/b.jpg'}}
-        assert vm.poster_url(item, device_settings).endswith(
-            'url=https%3A%2F%2Fcdn.test%2Fb.jpg'
-        )
+        assert vm.poster_url(item, device_settings) == 'https://cdn.test/b.jpg'
 
     def test_wide_variant(self, device_settings):
         item = {'posters': {'wide': 'https://cdn.test/w.jpg', 'big': 'https://cdn.test/b.jpg'}}
-        assert vm.poster_url(item, device_settings, wide=True).endswith(
-            'url=https%3A%2F%2Fcdn.test%2Fw.jpg'
-        )
+        assert vm.poster_url(item, device_settings, wide=True) == 'https://cdn.test/w.jpg'
 
     def test_missing_posters_is_none(self, device_settings):
         assert vm.poster_url({}, device_settings) is None
         assert vm.poster_url({'posters': {}}, device_settings) is None
 
-    def test_result_routed_through_proxy(self, device_settings):
+    def test_result_not_routed_through_proxy(self, device_settings):
         item = {'posters': {'big': 'https://cdn.test/b.jpg'}}
-        assert '/api/v1/proxy?url=' in vm.poster_url(item, device_settings)
+        url = vm.poster_url(item, device_settings)
+        assert url == 'https://cdn.test/b.jpg'
+        assert '/api/v1/proxy' not in url
 
 
 class TestCard:
@@ -80,7 +76,7 @@ class TestCard:
         assert card['kinopoisk_rating'] == 7.5
         assert card['is_4k'] is False
         assert card['watched'] is False
-        assert '/api/v1/proxy?url=' in card['poster']
+        assert card['poster'] == 'https://cdn.kino.test/posters/7/big.jpg'
         assert 'backdrop' in card
 
     def test_flags(self, device_settings):

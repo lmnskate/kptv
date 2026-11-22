@@ -14,6 +14,7 @@
 [Connecting a TV](#connecting-a-tv) •
 [Management](#management) •
 [Configuration](#configuration) •
+[How-To Guides](#how-to-guides) •
 [Moving to a New Server](#moving-to-a-new-server) •
 [Security](#security) •
 [Project Structure](#project-structure)
@@ -45,8 +46,7 @@ talks to this server.
 
 Descendant of [slonopot/kp-msx](https://github.com/slonopot/kp-msx), fully
 rewritten. The API contract (upstream KinoPub + KPTV `/api/v1/*`) and the
-project notes live in `AGENTS.md`; `docs/kp-client-plan.md` is the retired
-original phased plan (historical context).
+project notes live in `AGENTS.md`.
 
 ## Quick Start
 
@@ -213,7 +213,21 @@ Notes:
   `-d` (same `--cert-name kptv`), update `SERVER_HOST`,
   `./kptv.sh restart`.
 
+## How-To Guides
+
+Step-by-step instructions for the rare operational moments (in `docs/`):
+
+- [Restoring from a Backup](docs/restoring-from-backup.md) — bring the
+  devices back after a reinstall or a crash
+- [Moving to a New Server](docs/moving-to-a-new-server.md) — the full
+  relocation: new machine, database move, pointing the TVs
+- [Changing IP or Domain](docs/changing-ip-or-domain.md) — new provider IP
+  or a new domain name; DNS, certificate, the TVs
+
 ## Moving to a New Server
+
+The short version; a fuller walkthrough lives in
+[docs/moving-to-a-new-server.md](docs/moving-to-a-new-server.md).
 
 Servers get blocked sometimes. Everything a client needs lives in one SQLite
 database — devices, KinoPub tokens, settings, the proxy allowlist — so a
@@ -273,7 +287,7 @@ client/             # Smart TV SPA (vanilla ES5 JS, no build step)
     css/ js/        # js/hls.min.js is vendored and lazy-loaded at first playback
 cli/                # kptv.sh admin subcommand tree (list/delete/reset/export/import devices)
 tests/              # pytest suite (proxy, viewmodels, storage, API contract)
-docs/               # API contract + historical plan
+docs/               # How-To guides + the retired original plan
 conf/               # nginx config (HTTPS-only: app on 443, redirect on 80)
 data/               # SQLite DB + letsencrypt (bind-mounted, gitignored)
 backups/            # DB backups (gitignored)
