@@ -1489,7 +1489,23 @@ function applyFocus() {
   var prevFocused = $('#stage').querySelectorAll('.focused');
   for (var pi = 0; pi < prevFocused.length; pi++) { prevFocused[pi].classList.remove('focused'); }
   var row = rows[f.r];
-  if (!row || !row.length) return;
+  if (!row || !row.length) {
+    /* пустой экран (например, /home ответил пустыми рельсами): фокус падает
+       на ближайшую непустую строку — иначе не фокусируется ничего и пульт
+       молчит */
+    var nr = -1;
+    for (var ri = f.r; ri >= 0; ri--) {
+      if (rows[ri] && rows[ri].length) { nr = ri; break; }
+    }
+    if (nr < 0) {
+      for (var rj = f.r + 1; rj < rows.length; rj++) {
+        if (rows[rj] && rows[rj].length) { nr = rj; break; }
+      }
+    }
+    if (nr < 0) return;
+    f.r = nr;
+    row = rows[nr];
+  }
   f.c = Math.max(0, Math.min(f.c, row.length - 1));
   var elm = row[f.c];
   elm.classList.add('focused');

@@ -234,6 +234,13 @@ class KinoPub:
             if device is None:
                 return False
 
+            # A concurrent refresh may have cleared the pair (dead upstream
+            # tokens) while we waited on the lock: afterwards both the stored
+            # and the adopted token are None, the «tokens differ» adoption
+            # below does not trigger, and we would POST refresh_token=None.
+            if not self.refresh:
+                return False
+
             if device.token != self.token:
                 # Another request already refreshed the pair — adopt it.
                 # A dead pair comes back as (None, None): refuse the retry
