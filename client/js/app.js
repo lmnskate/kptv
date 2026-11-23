@@ -750,7 +750,12 @@ function buildPlayer() {
   controls.forEach(function (pair) { transport.appendChild(makePbtn(pair[0], pair[1])); });
   bar.appendChild(transport);
   var side = el('div', 'pbtn-side');
-  SIDE_CONTROLS.forEach(function (id) { side.appendChild(makePbtn(id)); });
+  SIDE_CONTROLS.forEach(function (id) {
+    /* нативный плеер не отдаёт списки уровней и аудиодорожек — кнопки
+       показали бы пустые попапы */
+    if (state.nativePlayer && (id === 'quality' || id === 'audio')) return;
+    side.appendChild(makePbtn(id));
+  });
   bar.appendChild(side);
   /* строка 0 — полоса прогресса (перемотка стрелками), строка 1 — кнопки */
   ROWS.player = [
@@ -776,6 +781,27 @@ function stopPlayback() {
   var video = playerVideo();
   video.pause();
   Array.prototype.forEach.call(video.querySelectorAll('track'), function (t) { t.remove(); });
+}
+
+/* Нативный HLS вместо hls.js: на части ТВ (тот же движок, что «альтернативный
+   источник» в kp-msx) играет заметно быстрее. Минус — выбор качества и
+   аудиодорожек недоступен (нативный плеер их списки не отдаёт). Локальный
+   флаг: относится к этому ТВ, а не к аккаунту. */
+var NATIVE_HLS_KEY = 'kptv-native-hls';
+
+function nativeHlsPref() {
+  try { return localStorage.getItem(NATIVE_HLS_KEY) === '1'; }
+  catch (e) { return false; }
+}
+
+function setNativeHlsPref(on) {
+  try { localStorage.setItem(NATIVE_HLS_KEY, on ? '1' : '0'); }
+  catch (e) { /* ТВ-вебвью без storage — тумблер просто не запомнится */ }
+}
+
+function canNativeHls() {
+  var v = document.createElement('video');
+  return !!(v.canPlayType && v.canPlayType('application/vnd.apple.mpegurl'));
 }
 
 /* Индикатор буферизации: «замерший кадр» без спиннера на слабой сети
@@ -1359,14 +1385,23 @@ function startPlayback(info) {
     video.appendChild(t);
   });
 
-  /* hls.js — в приоритете везде, где есть MSE: только он даёт переключение
+  /* hls.js — по умолчанию везде, где есть MSE: только он даёт переключение
      качества и аудиодорожек (у нативного плеера их списки недоступны).
      Нативный HLS — фолбэк для устройств без MSE и после неисправимой ошибки
-     hls.js (например, неподдерживаемый кодек в манифесте) */
-  if (window.Hls && Hls.isSupported()) {
+     hls.js (например, неподдерживаемый кодек в манифесте), а по тумблеру
+     «Нативный плеер» в настройках — сразу, без попыток hls.js */
+  state.nativePlayer = false;
+  if (nativeHlsPref() && canNativeHls()) {
+    state.nativePlayer = true;
+    video.src = info.url;
+    restoreOnMeta(video);
+  } else if (window.Hls && Hls.isSupported()) {
     var hls = new Hls({
-      /* слабые ТВ тонут в декодировании длинного задела — ограничиваем */
-      backBufferLength: 90
+      /* слабые ТВ тонут в декодировании длинного задела — ограничиваем
+         сзади; спереди наоборот держим подушку побольше: на медленном канале
+         буфер по умолчанию (30 с) постоянно сдыхает на грани */
+      backBufferLength: 90,
+      maxBufferLength: 60
     });
     state.hls = hls;
     state.hlsRecovered = 0;
@@ -2750,6 +2785,7 @@ function renderSettings() {
   var rows = el('div', 'set-rows');
   rows.appendChild(setToggleRow('uhd', '4K (Ultra HD)', 'Запрашивать 4K-стримы, если доступны', !!s.uhd));
   rows.appendChild(setToggleRow('hdr', 'HDR', 'HDR-версии видео', !!s.hdr));
+  rows.appendChild(setToggleRow('native', 'Нативный плеер', 'Быстрее на части ТВ, но без выбора качества и озвучки', nativeHlsPref()));
   /* HEVC — не настройка: флаг на KinoPub выравнивается автоматически под
      реальную поддержку браузера при каждом воспроизведении, ручной тумблер
      всё равно перезаписывался */
@@ -2825,6 +2861,15 @@ function saveSetting(key, value, focusRow) {
 
 function toggleSetting(row) {
   var key = row.dataset.set;
+  if (key === 'native') {
+    /* локальная настройка ТВ — сервер не участвует */
+    setNativeHlsPref(!nativeHlsPref());
+    renderSettings();
+    FOCUS.settings = { r: Math.min(FOCUS.settings.r, ROWS.settings.length - 1), c: 0 };
+    applyFocus();
+    toast('Сохранено');
+    return;
+  }
   var s = (state.settings && state.settings.settings) || {};
   saveSetting(key, !s[key], FOCUS.settings.r);
 }
