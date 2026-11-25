@@ -447,6 +447,8 @@ html, body {
 .btn.on { background: rgba(62,224,111,.18); color: var(--good); }
 /* тот же конфликт, что у табов: .btn.on ниже в файле перебивал .btn.focused */
 .btn.on.focused { background: #fff; color: #0b0e13; }
+/* подпись «Сезон · Серия» внутри кнопки «Продолжить просмотр» */
+.btn .b-ep { margin-left: 12px; font-size: 15px; font-weight: 400; opacity: .8; }
 
 /* ---------- Детальная страница ---------- */
 
@@ -956,7 +958,7 @@ html, body {
    браузерах отступы не удвоились. Grid gap не трогаем — он работает */
 #topnav, .track, .all-genre-art, .meta, .hero-btns, .detail-main, .d-btns,
 .tabs, #player-controls, .pbtn-transport, .pbtn-side, .pbtn, .modal-item,
-.query-bar, .kb, .kb-row, .set-profile, .nf-query { gap: 0; }
+.query-bar, .kb, .kb-row, .set-profile { gap: 0; }
 #topnav > * + *:not(.nav-list) { margin-top: 6px; }
 /* 26px + собственный margin-right:-6px у карточки = те же визуальные 20px,
    что давали gap:32px с двумя отрицательными маргинами */
@@ -974,7 +976,6 @@ html, body {
 .pbtn.pbtn-play > * + * { margin-left: 0; }
 .modal-item > * + * { margin-left: 14px; }
 .query-bar > * + * { margin-left: 14px; }
-.nf-query > * + * { margin-left: 10px; }
 .kb > * + * { margin-top: 12px; }
 .kb-row > * + * { margin-left: 12px; }
 .set-profile > * + * { margin-left: 30px; }
@@ -1026,19 +1027,30 @@ html, body {
 
 /* ---------- Автопереход к следующей серии ---------- */
 
+/* компактная плашка у нижней кромки: текст слева, отсчёт и кнопки справа,
+   по нижнему краю — тонкая полоса оставшегося времени */
 #player-autonext {
-  position: absolute; right: 72px; bottom: 190px; z-index: 30;
-  background: rgba(16,18,24,.97);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 16px;
-  padding: 22px 26px;
-  box-shadow: 0 24px 70px rgba(0,0,0,.7);
-  text-align: right;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 72px 20px;
+  background: rgba(12,14,19,.94);
+  border-top: 1px solid rgba(255,255,255,.08);
 }
-.an-line { font-size: 21px; margin-bottom: 14px; }
-.an-line b { color: var(--accent); }
-.an-btns { display: flex; justify-content: flex-end; }
-.an-btns > * + * { margin-left: 14px; }
+.an-text {
+  font-size: 20px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-right: 30px;
+}
+.an-side { display: flex; align-items: center; flex: none; }
+.an-side > * + * { margin-left: 14px; }
+.an-count { font-size: 17px; color: var(--muted); }
+.an-count b { color: var(--accent); font-size: 20px; }
+.an-btn { padding: 10px 20px; font-size: 17px; border-radius: 10px; }
+.an-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: rgba(255,255,255,.1);
+}
+.an-bar i { display: block; height: 100%; background: var(--accent); }
 
 /* ---------- Скелетоны загрузки ---------- */
 
@@ -1068,20 +1080,6 @@ html, body {
 
 .set-version { margin: 24px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
 
-/* ---------- Модал: создание папки и подтверждения ---------- */
+/* ---------- Модал закладок ---------- */
 
-#modal-box.modal-wide { width: 980px; }
-.nf-query {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--panel);
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 12px;
-  padding: 14px 18px;
-  font-size: 24px;
-  min-height: 58px;
-  margin-bottom: 16px;
-}
-.nf-query #nf-text { font-weight: 600; word-break: break-all; }
-.nf-kb .kb-row, .nf-controls { justify-content: center; margin-top: 10px; }
-.kb-mini { width: 64px; height: 50px; font-size: 20px; }
-.kb-mini.wide { width: 108px; }
+.modal-empty { padding: 18px 10px 8px; color: var(--muted); font-size: 19px; line-height: 1.45; }

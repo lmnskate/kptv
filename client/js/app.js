@@ -102,6 +102,7 @@ var state = {
   hls: null,
   qualityH: null,       // выбранная высота потока (null = Авто)
   progressTimer: null,
+  playRestart: false,   // «Смотреть» с начала, игнорируя позицию resume
   subs: 'Выкл',
   popup: null,
   popupIdx: 0,
@@ -123,7 +124,6 @@ var state = {
   settings: null,
   catalogType: null,    // тип, чей контент сейчас в #catalog-content
   autoNext: null,       // {s,e,left,cur,timer} — отсчёт автоперехода к след. серии
-  nf: null,             // состояние модала создания папки закладок
 };
 
 /* ----------------------------- Хелперы ---------------------------------- */
@@ -276,6 +276,8 @@ async function loadDetail(id) {
   t.cast = d.cast ? d.cast.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
   t.bookmarks = d.bookmarks || [];
   t.folders = d.bookmark_folders || [];
+  /* точка возобновления ЭТОГО устройства (сезон/серия/позиция) с бэкенда */
+  t.resume = d.resume || null;
   t.seasons = (d.seasons || []).map(function (s) {
     return {
       n: s.n,
@@ -568,6 +570,49 @@ function epCard(t, e) {
   return c;
 }
 
+/* Точка возобновления считается живой, пока просмотр не завершён: на 100%
+   «продолжать» нечего — дальше работает обычная кнопка «Смотреть» */
+function hasResume(t) {
+  return !!(t && t.resume && t.resume.progress > 0 && t.resume.progress < 100);
+}
+
+function resumeButton(t) {
+  if (!hasResume(t)) return '';
+  var label = '▶ Продолжить просмотр';
+  if (t.resume.season != null) {
+    label += '<span class="b-ep">Сезон ' + t.resume.season + ' · Серия ' + t.resume.number + '</span>';
+  }
+  return '<button class="btn primary focusable" data-act="resume">' + label + '</button>';
+}
+
+/* Открыть плеер на серии, где остановились: номера сезона/серии из resume
+   (или media карточки «Продолжить просмотр») переводим в индексы загруженной
+   карточки; без них — обычный запуск (фильм сам встанет на позицию) */
+async function playResume(id) {
+  var t = byId(id);
+  if (!t || !t.detail) {
+    try {
+      t = await loadDetail(id);
+    } catch (e) {
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      toast('Не удалось открыть карточку: ' + e.message);
+      return;
+    }
+  }
+  var m = t.resume || t.media;
+  if (!m || m.season == null || !t.seasons) return openPlayer(id);
+  for (var i = 0; i < t.seasons.length; i++) {
+    if (t.seasons[i].n !== m.season) continue;
+    var eps = t.seasons[i].episodes;
+    for (var j = 0; j < eps.length; j++) {
+      if (eps[j].n === m.number) return openPlayer(id, i, j);
+    }
+    /* серия не нашлась (перенумеровали) — хотя бы нужный сезон */
+    return openPlayer(id, i, null);
+  }
+  return openPlayer(id);
+}
+
 function renderDetail() {
   var t = state.title;
   var s = $('#screen-detail');
@@ -590,7 +635,8 @@ function renderDetail() {
     (t.q4k ? '<span class="uhd">4K</span>' : '') +
     '</div>' +
     '<div class="d-btns">' +
-    '<button class="btn primary focusable" data-act="watch">▶ Смотреть</button>' +
+    resumeButton(t) +
+    '<button class="btn' + (hasResume(t) ? '' : ' primary') + ' focusable" data-act="watch">▶ Смотреть</button>' +
     '<button class="btn focusable' + (t.bookmarks.length ? ' on' : '') + '" data-act="bookmark"><span class="b-txt">' + (t.bookmarks.length ? '✓ В закладках' : 'В закладки') + '</span></button>' +
     '</div>' +
     (t.desc ? '<p class="d-desc">' + esc(t.desc) + '</p>' : '') +
@@ -679,17 +725,67 @@ var PICON = {
   prev: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
 };
 
-/* Дефолт — 1080p: точное совпадение по высоте, иначе максимум */
-function pickDefaultLevel(levels) {
-  var maxI = -1;
-  for (var i = 0; i < levels.length; i++) {
-    if (levels[i].height === 1080) return i;
-    if (maxI < 0 || (levels[i].height || 0) > (levels[maxI].height || 0)) maxI = i;
+/* Стандартные классы вместо «сырых» высот манифеста: KP режет ряды под
+   исходник (876p/960p — это кропнутый 1080p), и список «876p, 960p, 1080p»
+   только путал. Ярлык один на класс; выбор класса пинит его старший ряд */
+var QUALITY_CLASSES = [
+  [2000, '4K'],
+  [1200, '2K'],
+  [800, 'FHD'],
+  [600, 'HD'],
+  [0, 'SD']
+];
+
+function qualityLabel(h) {
+  for (var i = 0; i < QUALITY_CLASSES.length; i++) {
+    if (h >= QUALITY_CLASSES[i][0]) return QUALITY_CLASSES[i][1];
   }
-  return maxI;
+  return 'SD';
 }
 
-/* Стартовое качество: сохранённый вручную выбор (держим между сериями),
+/* Уровни hls.js, сгруппированные в классы: [{label, height, level}],
+   от тяжёлых к лёгким; представитель класса — самый высокий его ряд */
+function qualityClasses(levels) {
+  var byLabel = {};
+  var out = [];
+  levels.forEach(function (lv, i) {
+    if (!lv.height) return;
+    var label = qualityLabel(lv.height);
+    if (!byLabel[label]) {
+      byLabel[label] = { label: label, height: lv.height, level: i };
+      out.push(byLabel[label]);
+    } else if (lv.height > byLabel[label].height) {
+      byLabel[label].height = lv.height;
+      byLabel[label].level = i;
+    }
+  });
+  out.sort(function (a, b) { return b.height - a.height; });
+  return out;
+}
+
+/* Старые сохранённые выборы («1080p», «876p») переводим в классы;
+   новые («FHD», «4K») проходят как есть */
+function qualityPrefLabel(saved) {
+  if (/^\d+p$/.test(saved)) return qualityLabel(parseInt(saved, 10));
+  return saved;
+}
+
+/* Дефолт — 1080p: точное совпадение, иначе ближайший ряд НИЖЕ (на слабом
+   канале лучше чуть легче), и лишь когда ниже пусто — самый лёгкий из
+   верхних. Раньше без точного 1080p пинился максимум — на 4K-only
+   манифестах это был 2160p без всякого ABR, отсюда «4K вечно грузится» */
+function pickDefaultLevel(levels) {
+  var below = -1, above = -1;
+  for (var i = 0; i < levels.length; i++) {
+    var h = levels[i].height || 0;
+    if (h === 1080) return i;
+    if (h < 1080 && (below < 0 || h > (levels[below].height || 0))) below = i;
+    if (h > 1080 && (above < 0 || h < (levels[above].height || 0))) above = i;
+  }
+  return below >= 0 ? below : above;
+}
+
+/* Стартовое качество: сохранённый вручную класс (держим между сериями),
    иначе обычный дефолт. «Авто» — оставляем адаптивный режим как есть */
 function applyQualityPref(hls) {
   var levels = hls.levels || [];
@@ -697,18 +793,19 @@ function applyQualityPref(hls) {
   var saved = trackPref('quality');
   if (saved === 'Авто') { state.qualityH = null; return; }
   if (saved) {
-    var h = parseInt(saved, 10);
-    for (var i = 0; i < levels.length; i++) {
-      if (levels[i].height === h) {
-        hls.currentLevel = i;
-        state.qualityH = h;
+    var label = qualityPrefLabel(saved);
+    var classes = qualityClasses(levels);
+    for (var i = 0; i < classes.length; i++) {
+      if (classes[i].label === label) {
+        hls.currentLevel = classes[i].level;
+        state.qualityH = classes[i].height;
         return;
       }
     }
   }
-  /* сохранённое качество в этом манифесте отсутствует — дефолт.
+  /* сохранённый класс в этом манифесте отсутствует — дефолт.
      qualityH не трогаем: это стартовый пин уровня, а не ручной выбор —
-     иначе попап качества показывал бы «804p ✓» в режиме «Авто» */
+     иначе попап качества показывал бы «FHD ✓» в режиме «Авто» */
   var ix = pickDefaultLevel(levels);
   if (ix >= 0) {
     hls.currentLevel = ix;
@@ -782,21 +879,24 @@ function setBuffering(on) {
   if (b) b.classList.toggle('hidden', !on);
 }
 
-/* Автопереход к следующей серии: отсчёт с кнопками «Смотреть»/«Отмена».
+/* Автопереход к следующей серии: компактная плашка у нижней кромки с
+   отсчётом и кнопками «Смотреть»/«Отмена».
    Любая серия сериала завершается через ended → отсчёт 5 с → openPlayer */
 function autoNextStart() {
   var t = state.title;
   var nxt = t && isSerial(t) ? nextEpisodeIndex() : null;
   if (!nxt) { toast('Просмотр завершён'); return; }
-  state.autoNext = { s: nxt.s, e: nxt.e, left: 5, cur: 0 };
+  state.autoNext = { s: nxt.s, e: nxt.e, total: 5, left: 5, cur: 0 };
   renderAutoNext();
-  state.autoNext.timer = setInterval(autoNextTick, 1000);
+  /* тик 250 мс, чтобы полоса отсчёта двигалась плавно: CSS-переходы на ТВ
+     отключены (.tv), поэтому ширину крутит JS */
+  state.autoNext.timer = setInterval(autoNextTick, 250);
 }
 
 function autoNextTick() {
   var an = state.autoNext;
   if (!an) return;
-  an.left--;
+  an.left = Math.round((an.left - 0.25) * 100) / 100;
   if (an.left <= 0) { autoNextRun(); return; }
   renderAutoNext();
 }
@@ -804,14 +904,19 @@ function autoNextTick() {
 function renderAutoNext() {
   var an = state.autoNext;
   if (!an) return;
-  /* какая серия дальше — «Сезон 2 · Серия 1 начнётся через N», иначе
+  /* какая серия дальше — «Далее: Сезон 2 · Серия 1 — Название», иначе
      отсчёт висел без контекста */
   var t = state.title;
   var se = t && t.seasons && t.seasons[an.s];
   var ep = se && se.episodes[an.e];
   var what = (se && ep) ? 'Сезон ' + se.n + ' · Серия ' + ep.n : 'Следующая серия';
-  var line = document.querySelector('#player-autonext .an-line');
-  if (line) line.innerHTML = esc(what) + ' начнётся через <b id="an-count">' + an.left + '</b>';
+  if (ep && ep.title) what += ' — ' + ep.title;
+  var line = document.querySelector('#player-autonext .an-text');
+  if (line) line.textContent = 'Далее: ' + what;
+  var num = document.getElementById('an-count');
+  if (num) num.textContent = Math.ceil(an.left);
+  var fill = document.getElementById('an-fill');
+  if (fill) fill.style.width = Math.max(0, an.left / an.total * 100) + '%';
   var btns = document.querySelectorAll('#player-autonext .btn');
   for (var i = 0; i < btns.length; i++) {
     btns[i].classList.toggle('focused', i === an.cur);
@@ -1133,13 +1238,13 @@ function popupConfig(kind) {
     if (!state.hls || !state.hls.levels || !state.hls.levels.length) {
       return { title: 'Качество', items: ['Авто'], current: 'Авто' };
     }
-    var heights = [];
-    state.hls.levels.forEach(function (lv) {
-      if (lv.height && heights.indexOf(lv.height) < 0) heights.push(lv.height);
-    });
-    heights.sort(function (a, b) { return b - a; });
-    var qlabels = ['Авто'].concat(heights.map(function (h) { return h + 'p'; }));
-    return { title: 'Качество', items: qlabels, current: state.qualityH ? state.qualityH + 'p' : 'Авто' };
+    var classes = qualityClasses(state.hls.levels);
+    var qlabels = ['Авто'].concat(classes.map(function (c) { return c.label; }));
+    return {
+      title: 'Качество',
+      items: qlabels,
+      current: state.qualityH ? qualityLabel(state.qualityH) : 'Авто'
+    };
   }
   return null;
 }
@@ -1191,11 +1296,14 @@ function selectPopup(i) {
         state.hls.currentLevel = -1;
         state.qualityH = null;
       } else {
-        var height = parseInt(value, 10);
-        for (var li = 0; li < state.hls.levels.length; li++) {
-          if (state.hls.levels[li].height === height) { state.hls.currentLevel = li; break; }
+        var classes = qualityClasses(state.hls.levels);
+        for (var li = 0; li < classes.length; li++) {
+          if (classes[li].label === value) {
+            state.hls.currentLevel = classes[li].level;
+            state.qualityH = classes[li].height;
+            break;
+          }
         }
-        state.qualityH = height;
       }
       saveTrackPref('quality', value);
       toast('Качество: ' + value);
@@ -1291,7 +1399,7 @@ function hevcSupported() {
   return ok;
 }
 
-async function openPlayer(id, sIdx, eIdx) {
+async function openPlayer(id, sIdx, eIdx, restart) {
   autoNextStop();
   var t = byId(id);
   if (!t || !t.detail) {
@@ -1333,6 +1441,7 @@ async function openPlayer(id, sIdx, eIdx) {
   }
   var hlsPromise = ensureHls();
   state.playInfo = info;
+  state.playRestart = !!restart;
   state.subs = 'Выкл';
   await hlsPromise;
 
@@ -1419,7 +1528,9 @@ function startPlayback(info) {
 
   buildPlayer();
 
-  if (info.position) {
+  /* restart («Смотреть» при живой кнопке «Продолжить») игнорирует позицию —
+     старт с начала; иначе встаём на точку возобновления */
+  if (info.position && !state.playRestart) {
     var onMeta = function () {
       video.removeEventListener('loadedmetadata', onMeta);
       if (video.currentTime < info.position - 5) video.currentTime = info.position;
@@ -2881,8 +2992,8 @@ function navAction(id) {
 
 /* ------------------- Модал выбора папки закладок ------------------- */
 
-/* state.modal: 'bookmarks' — выбор папок, 'newfolder' — создание папки
-   (экранная клавиатура) */
+/* Папки создаются только в аккаунте KinoPub (на сайте) — здесь лишь
+   переключаем принадлежность тайтла уже существующим папкам */
 function openBookmarkFolders() {
   state.modal = 'bookmarks';
   state.modalIdx = 0;
@@ -2893,144 +3004,28 @@ function renderModal() {
   var box = $('#modal-box');
   box.className = '';
 
-  if (state.modal === 'newfolder') { renderNewFolder(); return; }
-
   var t = state.title;
-  var list = [{ create: true, title: '+ Новая папка' }].concat(t.folders || []);
-  var items = list.map(function (f, i) {
-    var inside = !f.create && t.bookmarks.indexOf(f.id) >= 0;
-    return '<div class="modal-item' + (i === state.modalIdx ? ' cur' : '') + '" data-i="' + i + '">' +
-      '<span class="mi-check">' + (inside ? '✓' : (f.create ? '+' : '')) + '</span>' +
-      '<span class="mi-name">' + esc(f.title) + '</span>' +
-      '<span class="mi-count">' + (!f.create && f.count != null ? f.count : '') + '</span></div>';
-  }).join('');
-  box.innerHTML = '<div class="popup-title">Закладки</div>' + items;
+  var folders = t.folders || [];
+  var body;
+  if (!folders.length) {
+    body = '<div class="modal-empty">Папок закладок пока нет.<br>' +
+      'Создайте папку в своём аккаунте на kino.pub — она появится здесь.</div>';
+  } else {
+    body = folders.map(function (f, i) {
+      var inside = t.bookmarks.indexOf(f.id) >= 0;
+      return '<div class="modal-item' + (i === state.modalIdx ? ' cur' : '') + '" data-i="' + i + '">' +
+        '<span class="mi-check">' + (inside ? '✓' : '') + '</span>' +
+        '<span class="mi-name">' + esc(f.title) + '</span>' +
+        '<span class="mi-count">' + (f.count != null ? f.count : '') + '</span></div>';
+    }).join('');
+  }
+  box.innerHTML = '<div class="popup-title">Закладки</div>' + body;
   $('#modal').classList.remove('hidden');
 }
 
 function closeModal() {
   state.modal = null;
   $('#modal').classList.add('hidden');
-}
-
-/* Создание папки: компактная экранная клавиатура в модале (пультовых
-   клавиш всего десять — печатать по буквам с неё и единственный путь) */
-function openNewFolder() {
-  state.modal = 'newfolder';
-  state.nf = { value: '', lang: 'ru', sel: 'done' };
-  renderModal();
-}
-
-function renderNewFolder() {
-  var nf = state.nf;
-  var box = $('#modal-box');
-  box.className = 'modal-wide';
-  var rows = KB_LAYOUTS[nf.lang].map(function (row) {
-    var keys = row.map(function (k) {
-      if (k === '⌫') return '<button class="kb-key kb-mini wide" data-nk="back">' + BACKSPACE_ICON + '</button>';
-      return '<button class="kb-key kb-mini" data-nk="' + k + '">' + esc(k) + '</button>';
-    }).join('');
-    return '<div class="kb-row">' + keys + '</div>';
-  }).join('');
-  box.innerHTML =
-    '<div class="popup-title">Новая папка закладок</div>' +
-    '<div class="nf-query"><span id="nf-text">' + esc(nf.value) + '</span><span class="q-caret"></span></div>' +
-    '<div class="nf-kb">' + rows + '</div>' +
-    '<div class="kb-row nf-controls">' +
-    '<button class="kb-key kb-mini" data-nk="lang">' + (nf.lang === 'ru' ? 'RU' : 'EN') + '</button>' +
-    '<button class="kb-key kb-mini wide" data-nk="space">Пробел</button>' +
-    '<button class="kb-key kb-mini wide" data-nk="done">Создать</button>' +
-    '<button class="kb-key kb-mini" data-nk="cancel">Отмена</button>' +
-    '</div>';
-  var cur = box.querySelector('[data-nk="' + nf.sel + '"]');
-  if (cur) cur.classList.add('focused');
-  $('#modal').classList.remove('hidden');
-}
-
-/* Навигация по клавишам модала по их реальной геометрии: строки раскладок
-   разной длины, считать индексы бессмысленно — берём ближайший по центру */
-function nfMove(dx, dy) {
-  var keys = Array.prototype.slice.call(document.querySelectorAll('#modal-box .kb-key'));
-  if (!keys.length || !state.nf) return;
-  var cur = null, ci = -1;
-  for (var i = 0; i < keys.length; i++) {
-    if (keys[i].dataset.nk === state.nf.sel) { cur = keys[i]; ci = i; break; }
-  }
-  if (!cur) { state.nf.sel = keys[0].dataset.nk; renderModal(); return; }
-  if (dx) {
-    /* строго внутри ряда: по плоскому списку ±1 уводило фокус с края
-       ряда на первый ключ следующего ряда */
-    var crr = cur.getBoundingClientRect();
-    var ccx = (crr.left + crr.right) / 2, ccy = (crr.top + crr.bottom) / 2;
-    var hor = null, horD = Infinity;
-    keys.forEach(function (k) {
-      if (k === cur) return;
-      var r = k.getBoundingClientRect();
-      var ky = (r.top + r.bottom) / 2;
-      if (Math.abs(ky - ccy) > r.height / 2 + 2) return; /* другой ряд */
-      if (dx < 0 && r.right >= crr.left) return;
-      if (dx > 0 && r.left <= crr.right) return;
-      var d = Math.abs((r.left + r.right) / 2 - ccx);
-      if (d < horD) { horD = d; hor = k; }
-    });
-    if (hor) { state.nf.sel = hor.dataset.nk; renderModal(); }
-    return;
-  }
-  var cr = cur.getBoundingClientRect();
-  var cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
-  var best = null, bestScore = Infinity;
-  keys.forEach(function (k) {
-    if (k === cur) return;
-    var r = k.getBoundingClientRect();
-    var kx = r.left + r.width / 2, ky = r.top + r.height / 2;
-    if (dy < 0 && ky >= cy - 2) return;
-    if (dy > 0 && ky <= cy + 2) return;
-    var score = Math.abs(kx - cx) * 2 + Math.abs(ky - cy);
-    if (score < bestScore) { bestScore = score; best = k; }
-  });
-  if (best) { state.nf.sel = best.dataset.nk; renderModal(); }
-}
-
-function nfPress(elm) {
-  var nf = state.nf;
-  if (!nf) return;
-  var k = elm.dataset.nk;
-  if (k === 'done') { createFolder(); return; }
-  if (k === 'cancel') { closeModal(); return; }
-  if (k === 'back') nf.value = nf.value.slice(0, -1);
-  else if (k === 'space') nf.value += ' ';
-  else if (k === 'lang') nf.lang = nf.lang === 'ru' ? 'en' : 'ru';
-  else nf.value += k;
-  if (nf.value.length > 60) nf.value = nf.value.slice(0, 60);
-  renderModal();
-}
-
-function createFolder() {
-  var title = state.nf.value.trim();
-  if (!title) { toast('Введите название папки'); return; }
-  api('/bookmarks/folders', { method: 'POST', body: { title: title } })
-    .then(function () {
-      closeModal();
-      toast('Папка «' + title + '» создана');
-      return api('/bookmarks');
-    })
-    .then(function (res) {
-      state.bookmarkFolders = (res && res.folders) || state.bookmarkFolders;
-      if (state.title && state.title.detail) {
-        state.title.folders = state.bookmarkFolders.slice();
-      }
-      if (state.screen === 'bookmarks') {
-        /* перечитать вкладки со свежими счётчиками */
-        SECTION_RENDERED.bookmarks = false;
-        openBookmarks();
-      } else if (state.screen === 'detail') {
-        openBookmarkFolders();
-      }
-    })
-    .catch(function (e) {
-      if (e && e.code === 'not_registered') { showRegister(); return; }
-      toast('Ошибка: ' + e.message);
-    });
 }
 
 function syncBookmarkButton() {
@@ -3043,9 +3038,8 @@ function syncBookmarkButton() {
 }
 
 function toggleBookmarkFolder(i) {
-  if (i === 0) { openNewFolder(); return; }
   var t = state.title;
-  var f = t.folders[i - 1];
+  var f = t.folders[i];
   if (!f) return;
   var wasIn = t.bookmarks.indexOf(f.id) >= 0;
   api('/bookmarks/toggle', { method: 'POST', body: { item: t.id, folder: f.id } })
@@ -3075,7 +3069,7 @@ function activate() {
     if (elm.dataset.act === 'retry-home') return loadHome();
     if (elm.dataset.act === 'watch') return openPlayer(Number(elm.closest('.hero').dataset.id || FEATURED_ID));
     if (elm.dataset.act === 'more') return openDetail(FEATURED_ID);
-    if (elm.dataset.kind === 'watch') return openPlayer(Number(elm.dataset.id));
+    if (elm.dataset.kind === 'watch') return playResume(Number(elm.dataset.id));
     if (elm.dataset.kind === 'title') return openDetail(Number(elm.dataset.id));
   }
 
@@ -3098,7 +3092,7 @@ function activate() {
       return;
     }
     if (elm.dataset.kind === 'collection') return openCollection({ id: +elm.dataset.id, title: elm.dataset.name });
-    if (elm.dataset.kind === 'watch') return openPlayer(Number(elm.dataset.id));
+    if (elm.dataset.kind === 'watch') return playResume(Number(elm.dataset.id));
     if (elm.dataset.kind === 'title') return openDetail(Number(elm.dataset.id));
   }
 
@@ -3110,7 +3104,10 @@ function activate() {
 
   if (state.screen === 'detail') {
     var a = elm.dataset.act;
-    if (a === 'watch') return openPlayer(state.title.id);
+    /* при живой точке возобновления «Смотреть» — старт с начала (resume
+       отдельной кнопкой), иначе обе кнопки делали бы одно и то же */
+    if (a === 'watch') return openPlayer(state.title.id, null, null, hasResume(state.title));
+    if (a === 'resume') return playResume(state.title.id);
     if (a === 'bookmark') return openBookmarkFolders();
     if (elm.dataset.season !== undefined) return seasonSelect(+elm.dataset.season);
     if (elm.dataset.e !== undefined) return openPlayer(state.title.id, +elm.dataset.s, +elm.dataset.e);
@@ -3190,28 +3187,12 @@ function playerKey(k, e) {
 document.addEventListener('keydown', function (e) {
   var k = normKey(e);
   if (state.modal) {
-    if (state.modal === 'bookmarks') {
-      var n = (state.title.folders ? state.title.folders.length : 0) + 1;
-      if (k === 'ArrowUp') { state.modalIdx = Math.max(0, state.modalIdx - 1); renderModal(); }
-      else if (k === 'ArrowDown') { state.modalIdx = Math.min(n - 1, state.modalIdx + 1); renderModal(); }
-      else if (k === 'Enter') toggleBookmarkFolder(state.modalIdx);
-      else if (k === 'Backspace') closeModal();
-      else return;
-      e.preventDefault();
-      return;
-    }
-    /* newfolder */
-    if (k === 'ArrowLeft') nfMove(-1, 0);
-    else if (k === 'ArrowRight') nfMove(1, 0);
-    else if (k === 'ArrowUp') nfMove(0, -1);
-    else if (k === 'ArrowDown') nfMove(0, 1);
-    else if (k === 'Enter') {
-      var el = document.querySelector('#modal-box [data-nk="' + state.nf.sel + '"]');
-      if (el) nfPress(el);
-    } else if (k === 'Backspace') {
-      if (state.nf.value) { state.nf.value = state.nf.value.slice(0, -1); renderModal(); }
-      else closeModal();
-    } else return;
+    var n = state.title && state.title.folders ? state.title.folders.length : 0;
+    if (k === 'ArrowUp') { state.modalIdx = Math.max(0, state.modalIdx - 1); renderModal(); }
+    else if (k === 'ArrowDown') { state.modalIdx = Math.min(Math.max(0, n - 1), state.modalIdx + 1); renderModal(); }
+    else if (k === 'Enter') toggleBookmarkFolder(state.modalIdx);
+    else if (k === 'Backspace') closeModal();
+    else return;
     e.preventDefault();
     return;
   }
@@ -3285,13 +3266,8 @@ function locate(rows, node) {
 
 $('#stage').addEventListener('mouseover', function (e) {
   if (state.modal) {
-    if (state.modal === 'bookmarks') {
-      var mi = e.target.closest('.modal-item');
-      if (mi) { state.modalIdx = +mi.dataset.i; renderModal(); }
-    } else if (state.modal === 'newfolder') {
-      var nk = e.target.closest('[data-nk]');
-      if (nk && state.nf) { state.nf.sel = nk.dataset.nk; renderModal(); }
-    }
+    var mi = e.target.closest('.modal-item');
+    if (mi) { state.modalIdx = +mi.dataset.i; renderModal(); }
     return;
   }
   if (state.popup) {
@@ -3328,15 +3304,9 @@ $('#stage').addEventListener('mouseleave', clearFocused);
 
 $('#stage').addEventListener('click', function (e) {
   if (state.modal) {
-    if (state.modal === 'bookmarks') {
-      var mi = e.target.closest('.modal-item');
-      if (mi) toggleBookmarkFolder(+mi.dataset.i);
-      else if (e.target.id === 'modal') closeModal();
-    } else if (state.modal === 'newfolder') {
-      var nk = e.target.closest('[data-nk]');
-      if (nk) nfPress(nk);
-      else if (e.target.id === 'modal') closeModal();
-    }
+    var mi = e.target.closest('.modal-item');
+    if (mi) toggleBookmarkFolder(+mi.dataset.i);
+    else if (e.target.id === 'modal') closeModal();
     return;
   }
   if (state.screen === 'player') {

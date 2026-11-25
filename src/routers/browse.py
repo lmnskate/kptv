@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from typing import Optional
 
@@ -211,6 +212,101 @@ async def catalog(
     return paged
 
 
+# Upstream /items/search has no sort parameter and answers newest-first,
+# which buries the obvious hits («мстители» shows this year's knock-offs
+# before the Marvel films). The first pages are pulled once per query into a
+# pool, ranked by title relevance + popularity, and the pool is paginated
+# locally — the client's page=2,3… must not refetch upstream.
+_SEARCH_POOL_CAP = 100
+_SEARCH_POOL_TTL = 300
+_SEARCH_PER_PAGE = 25
+_search_cache: dict = {}
+
+
+def _norm_text(
+    value
+):
+    value = (value or '').lower().replace('ё', 'е')
+    return ' '.join(re.sub(r'[^0-9a-zа-я]+', ' ', value).split())
+
+
+def _title_score(
+    item,
+    query
+):
+    """Title relevance to the normalized query: exact match beats prefix
+    beats substring; «Название / Original title» scores by its best half."""
+    best = 0
+    for part in str(item.get('title') or '').split('/'):
+        part = _norm_text(part)
+        if not part:
+            continue
+        if part == query:
+            return 100
+        if part.startswith(query):
+            best = max(best, 80)
+        elif query in part:
+            best = max(best, 60)
+        elif all(w in part.split() for w in query.split()):
+            best = max(best, 40)
+    return best
+
+
+async def _search_pool(
+    kp,
+    raw_query,
+    query
+):
+    """Ranked pool of raw upstream items for the query (None when the first
+    page is unreachable; a later page failing just truncates the pool)."""
+    now = time.monotonic()
+    cached = _search_cache.get(query)
+    if cached is not None and now - cached[0] < _SEARCH_POOL_TTL:
+        return cached[1]
+
+    items = []
+    page = 1
+    while len(items) < _SEARCH_POOL_CAP:
+        result = await kp.api(
+            '/items/search',
+            params={'q': raw_query, 'page': page, 'perpage': 50}
+        )
+        if result is None:
+            if page == 1:
+                return None
+            break
+        if kp.page_out_of_range(result, page):
+            break
+        batch = result.get('items') or []
+        items.extend(batch)
+        pagination = result.get('pagination') or {}
+        if not batch or page >= (pagination.get('total') or 1):
+            break
+        page += 1
+
+    # Stable sort: equal scores keep the upstream order; popularity breaks
+    # ties so the well-known title floats above fresh namesakes.
+    pool = sorted(
+        items[:_SEARCH_POOL_CAP],
+        key=lambda i: (
+            -_title_score(i, query),
+            -(i.get('views') or 0),
+            -(i.get('rating_votes') or 0),
+        )
+    )
+    if len(_search_cache) > 128:
+        stale = [
+            key for key, (cached_at, _)
+            in _search_cache.items()
+            if now - cached_at >= _SEARCH_POOL_TTL
+        ]
+        for key in stale:
+            del _search_cache[key]
+    _search_cache[query] = (now, pool)
+
+    return pool
+
+
 @router.get('/search')
 async def search(
     request: Request,
@@ -221,20 +317,22 @@ async def search(
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
-    result = await current.kp.api(
-        '/items/search',
-        params={'q': q, 'page': page}
-    )
-    if result is None:
+    query = _norm_text(q)
+    if not query:
+        return {'items': [], 'page': page, 'has_more': False}
+
+    pool = await _search_pool(current.kp, q, query)
+    if pool is None:
         return error(502, 'upstream', 'KinoPub недоступен')
 
-    if current.kp.page_out_of_range(result, page):
-        result['items'] = []
+    start = (max(1, page) - 1) * _SEARCH_PER_PAGE
+    chunk = pool[start:start + _SEARCH_PER_PAGE]
 
-    paged = _paged(result, page)
-    paged['items'] = [vm.card(i, current.settings) for i in paged['items']]
-
-    return paged
+    return {
+        'items': [vm.card(i, current.settings) for i in chunk],
+        'page': page,
+        'has_more': start + _SEARCH_PER_PAGE < len(pool)
+    }
 
 
 @router.get('/filters')
@@ -386,6 +484,18 @@ async def item_detail(
         detail['videos'] = _videos_view(item)
     if item.get('seasons') is not None:
         detail['seasons'] = _seasons_view(item)
+
+    # Per-device resume point for the «Продолжить просмотр» button: the
+    # newest local history row knows the exact season/episode this device
+    # stopped at (upstream watched flags would only give «first unfinished»).
+    row = storage.get_device_history_entry(current.id, content_id)
+    if row is not None:
+        detail['resume'] = {
+            'season': row['season'] or None,
+            'number': row['episode'] or None,
+            'position': row['position'],
+            'progress': vm.progress_pct(row['duration'], row['position']),
+        }
 
     return detail
 

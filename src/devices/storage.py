@@ -359,6 +359,36 @@ def get_device_history_position(
     return None if row is None else row[0]
 
 
+def get_device_history_entry(
+    device_id,
+    item_id
+):
+    """The newest local viewing event of a title — this device's resume
+    point: its season/episode say WHERE the viewer stopped (upstream
+    per-episode flags are account-wide and carry no recency)."""
+    cursor = connection.execute(
+        """
+        SELECT season, episode, position, duration, updated_at
+        FROM device_history
+        WHERE device_id = ?1 AND item_id = ?2
+        ORDER BY updated_at DESC, rowid DESC
+        LIMIT 1
+        """,
+        [device_id, item_id]
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+
+    return {
+        'season': row[0],
+        'episode': row[1],
+        'position': row[2],
+        'duration': row[3],
+        'updated_at': row[4]
+    }
+
+
 def get_device_history(
     device_id,
     limit,

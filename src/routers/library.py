@@ -16,10 +16,6 @@ router = APIRouter(
 )
 
 
-class FolderCreate(BaseModel):
-    title: str
-
-
 class BookmarkToggle(BaseModel):
     item: int
     folder: int
@@ -90,26 +86,6 @@ async def bookmark_folder_items(
         'page': pagination.get('current', page),
         'has_more': pagination.get('current', page) < pagination.get('total', page)
     }
-
-
-@router.post('/bookmarks/folders')
-async def bookmark_folder_create(
-    request: Request,
-    body: FolderCreate
-):
-    current = registered(request)
-    if current is None:
-        return error(401, 'not_registered', 'Устройство не активировано')
-
-    result = await current.kp.api(
-        '/bookmarks/create',
-        {'title': body.title},
-        method='POST'
-    )
-    if result is None:
-        return error(502, 'upstream', 'KinoPub недоступен')
-
-    return {'ok': True}
 
 
 @router.post('/bookmarks/toggle')

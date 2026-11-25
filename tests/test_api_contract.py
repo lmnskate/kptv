@@ -210,6 +210,36 @@ class TestPlay:
         )
 
 
+class TestItemDetail:
+    def test_resume_point_from_local_history(self, client, registered_device):
+        registered_device.kp.responses['/items/7'] = {'item': kp_item(7, type='serial')}
+        storage.record_device_history(registered_device.id, 7, 2, 5, position=300, duration=600)
+        response = client.get('/api/v1/items/7', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        assert response.json()['resume'] == {
+            'season': 2,
+            'number': 5,
+            'position': 300,
+            'progress': 50,
+        }
+
+    def test_movie_resume_has_no_season(self, client, registered_device):
+        registered_device.kp.responses['/items/8'] = {'item': kp_item(8)}
+        storage.record_device_history(registered_device.id, 8, 0, 0, position=100, duration=1000)
+        body = client.get('/api/v1/items/8', headers=DEVICE_HEADER).json()
+        assert body['resume'] == {
+            'season': None,
+            'number': None,
+            'position': 100,
+            'progress': 10,
+        }
+
+    def test_no_history_no_resume(self, client, registered_device):
+        registered_device.kp.responses['/items/9'] = {'item': kp_item(9)}
+        body = client.get('/api/v1/items/9', headers=DEVICE_HEADER).json()
+        assert 'resume' not in body
+
+
 class TestCatalog:
     def test_bad_section_is_400(self, client, registered_device):
         response = client.get('/api/v1/catalog?section=hot', headers=DEVICE_HEADER)
@@ -266,6 +296,80 @@ class TestCatalog:
         assert body['types'] == [{'id': 1, 'title': 'movie'}]
         assert body['genres'] == [{'id': 10, 'title': 'драма'}]
         assert body['countries'] == []
+
+
+class TestSearch:
+    def _stub_pool(self, device, items, total=1):
+        device.kp.responses['/items/search'] = {
+            'items': items,
+            'pagination': {'current': 1, 'total': total},
+        }
+
+    def test_ranked_by_relevance_then_popularity(self, client, registered_device):
+        self._stub_pool(registered_device, [
+            kp_item(1, title='Мстители: Финал', year=2019, views=900),
+            kp_item(2, title='Мстители', year=2012, views=5000),
+            kp_item(3, title='Новые мстители', year=2025, views=10),
+            kp_item(4, title='Мстители: Война бесконечности', year=2018, views=3000),
+        ])
+        response = client.get('/api/v1/search?q=мстители', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        ids = [i['id'] for i in response.json()['items']]
+        # exact title first, then prefix matches by views, substring last
+        assert ids == [2, 4, 1, 3]
+
+    def test_original_title_half_matches(self, client, registered_device):
+        self._stub_pool(registered_device, [
+            kp_item(1, title='Чужой / Alien', views=100),
+            kp_item(2, title='Alien: Romulus / Чужой: Ромул', views=500),
+        ])
+        response = client.get('/api/v1/search?q=alien', headers=DEVICE_HEADER)
+        ids = [i['id'] for i in response.json()['items']]
+        assert ids == [1, 2]
+
+    def test_pool_paginates_locally(self, client, registered_device):
+        self._stub_pool(registered_device, [
+            kp_item(i, title=f'Фильм {i}', views=i)
+            for i in range(1, 31)
+        ])
+        page1 = client.get('/api/v1/search?q=фильм', headers=DEVICE_HEADER).json()
+        assert len(page1['items']) == 25
+        assert page1['has_more'] is True
+        page2 = client.get('/api/v1/search?q=фильм&page=2', headers=DEVICE_HEADER).json()
+        assert [i['id'] for i in page2['items']] == [5, 4, 3, 2, 1]
+        assert page2['has_more'] is False
+        # the second client page is served from the cached pool
+        assert len(registered_device.kp.calls) == 1
+
+    def test_fetches_upstream_pages_up_to_cap(self, client, registered_device):
+        def search_page(params):
+            start = (params['page'] - 1) * 50
+            return {
+                'items': [
+                    kp_item(i, title=f'Фильм {i}', views=i)
+                    for i in range(start + 1, start + 51)
+                ],
+                'pagination': {'current': params['page'], 'total': 3},
+            }
+
+        registered_device.kp.responses['/items/search'] = search_page
+        body = client.get('/api/v1/search?q=фильм', headers=DEVICE_HEADER).json()
+        # 100-item pool cap = two upstream pages of 50; ranked by views desc
+        assert len(registered_device.kp.calls) == 2
+        assert body['items'][0]['id'] == 100
+        assert body['has_more'] is True
+
+    def test_blank_query_returns_empty(self, client, registered_device):
+        response = client.get('/api/v1/search?q=!!!', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        assert response.json() == {'items': [], 'page': 1, 'has_more': False}
+        assert registered_device.kp.calls == []
+
+    def test_upstream_failure_is_502(self, client, registered_device):
+        registered_device.kp.responses['/items/search'] = None
+        response = client.get('/api/v1/search?q=мстители', headers=DEVICE_HEADER)
+        assert response.status_code == 502
+        assert error_code(response) == 'upstream'
 
 
 class TestHome:

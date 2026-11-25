@@ -140,6 +140,16 @@ class TestHistory:
         storage.record_device_history('tv-1', 100, 1, 5, position=42, duration=100)
         assert storage.get_device_history_position('tv-1', 100, 1, 5) == 42
 
+    def test_entry_is_the_newest_event_of_the_title(self, fresh_db):
+        assert storage.get_device_history_entry('tv-1', 100) is None
+        storage.record_device_history('tv-1', 100, 1, 1, position=10, duration=100)
+        storage.record_device_history('tv-1', 100, 1, 5, position=42, duration=200)
+        storage.record_device_history('tv-1', 200, 0, 0, position=1, duration=100)
+        entry = storage.get_device_history_entry('tv-1', 100)
+        assert (entry['season'], entry['episode']) == (1, 5)
+        assert entry['position'] == 42
+        assert entry['duration'] == 200
+
     def test_history_scoped_per_device(self, fresh_db):
         storage.record_device_history('tv-1', 100, 0, 0, position=1, duration=100)
         storage.record_device_history('tv-2', 200, 0, 0, position=1, duration=100)

@@ -7,7 +7,7 @@
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
 <title>KPTV — KinoPub для Smart TV</title>
-<link rel="stylesheet" href="css/client.css?v=56">
+<link rel="stylesheet" href="css/client.css?v=57">
 <!-- hls.min.js грузится лениво из app.js при первом воспроизведении -->
 </head>
 <body>
@@ -89,11 +89,13 @@
     <div id="player-paused" class="hidden"><svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></div>
     <div id="player-buffering" class="hidden"><svg viewBox="0 0 50 50"><circle class="buf-bg" cx="25" cy="25" r="20" fill="none" stroke-width="5"/><circle class="buf-arc" cx="25" cy="25" r="20" fill="none" stroke-width="5" stroke-linecap="round"/></svg></div>
     <div id="player-autonext" class="hidden">
-      <div class="an-line">Следующая серия начнётся через <b id="an-count">5</b></div>
-      <div class="an-btns">
-        <button class="btn primary focusable" data-an="play">▶ Смотреть</button>
-        <button class="btn focusable" data-an="cancel">Отмена</button>
+      <div class="an-text">Следующая серия</div>
+      <div class="an-side">
+        <span class="an-count"><b id="an-count">5</b> с</span>
+        <button class="btn an-btn primary focusable" data-an="play">▶ Смотреть</button>
+        <button class="btn an-btn focusable" data-an="cancel">Отмена</button>
       </div>
+      <div class="an-bar"><i id="an-fill"></i></div>
     </div>
     <div id="player-overlay">
       <div class="player-top">
@@ -117,6 +119,6 @@
   <div id="modal" class="hidden"><div id="modal-box"></div></div>
 </div>
 <script src="js/api.js?v=23"></script>
-<script src="js/app.js?v=73"></script>
+<script src="js/app.js?v=75"></script>
 </body>
 </html>

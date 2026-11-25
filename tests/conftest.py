@@ -63,6 +63,7 @@ def fresh_db(monkeypatch):
     proxy._PLAYLIST_CACHE.clear()
     auth_router._code_requests.clear()
     browse_router._home_cache.clear()
+    browse_router._search_cache.clear()
     library_router._local_history_cache.clear()
     yield conn
     conn.close()
