@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 import viewmodels as vm
 from devices import storage
+from routers.browse import invalidate_home_cache
 from routers.deps import error, registered
 
 router = APIRouter(
@@ -89,6 +90,8 @@ async def play(
         (playable.get('watching') or {}).get('time') or 0,
         playable.get('duration') or 0
     )
+    # The local-history «continue» rail on /home changed with this row.
+    invalidate_home_cache(current.id)
 
     info = vm.playable_info(item, playable)
     # Per-device resume: the local row knows where THIS device stopped.
@@ -129,5 +132,7 @@ async def progress(
         body.time,
         0
     )
+    # The local-history «continue» rail on /home changed with this row.
+    invalidate_home_cache(current.id)
 
     return {'ok': True}

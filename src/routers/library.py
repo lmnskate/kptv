@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 import viewmodels as vm
 from devices import storage
+from routers.browse import invalidate_home_cache
 from routers.deps import error, registered
 
 router = APIRouter(
@@ -243,6 +244,8 @@ async def history_clear(
 
     storage.clear_device_history(current.id)
     _drop_local_history_cache(current.id)
+    # The «continue» rail on /home is built from the wiped rows.
+    invalidate_home_cache(current.id)
 
     return {'ok': True}
 

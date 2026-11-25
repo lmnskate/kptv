@@ -268,6 +268,78 @@ class TestCatalog:
         assert body['countries'] == []
 
 
+class TestHome:
+    def _stub_rails(self, device):
+        device.kp.responses['/items/fresh'] = {'items': [kp_item(50)]}
+        device.kp.responses['/items/popular'] = {'items': [kp_item(51)]}
+        device.kp.responses['/items'] = {'items': [kp_item(52)]}
+        device.kp.responses['/watching/serials'] = {'items': [kp_item(60, type='serial')]}
+
+    def test_continue_rail_comes_from_local_history(self, client, registered_device):
+        self._stub_rails(registered_device)
+        storage.record_device_history(registered_device.id, 100, 1, 2, position=300, duration=600)
+        storage.record_device_history(registered_device.id, 200, 0, 0, position=150, duration=600)
+        registered_device.kp.responses['/items/100'] = {'item': kp_item(100, type='serial')}
+        registered_device.kp.responses['/items/200'] = {'item': kp_item(200)}
+
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        rails = {r['id']: r for r in response.json()['rails']}
+        continue_items = rails['continue']['items']
+        # newest local row first: the movie (200) was recorded after the serial
+        assert [i['id'] for i in continue_items] == [200, 100]
+        assert continue_items[0]['progress'] == 25
+        assert 'media' not in continue_items[0]
+        assert continue_items[1]['media'] == {'season': 1, 'number': 2}
+        assert continue_items[1]['progress'] == 50
+        # the «смотрю» rail is untouched
+        assert [i['id'] for i in rails['watching']['items']] == [60]
+
+    def test_continue_rail_ignores_account_wide_watching(self, client, registered_device):
+        registered_device.kp.responses['/watching/movies'] = {'items': [kp_item(70)]}
+        registered_device.kp.responses['/watching/serials'] = {'items': [kp_item(71, type='serial')]}
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        rails = {r['id']: r for r in response.json()['rails']}
+        assert 'continue' not in rails
+        called = [c['path'] for c in registered_device.kp.calls]
+        assert '/watching/movies' not in called
+
+    def test_continue_drops_titles_withdrawn_upstream(self, client, registered_device):
+        storage.record_device_history(registered_device.id, 100, 0, 0, position=10, duration=600)
+        registered_device.kp.responses['/items/100'] = None
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        rails = {r['id']: r for r in response.json()['rails']}
+        assert 'continue' not in rails
+
+    def test_play_and_progress_refresh_continue_rail(self, client, registered_device):
+        item = kp_item(100)
+        item['videos'] = [{
+            'number': 1,
+            'duration': 3000,
+            'files': [{'quality': '1080p', 'url': {'hls4': 'https://cdn.kino.test/v.m3u8'}}],
+        }]
+        registered_device.kp.responses['/items/100'] = {'item': item}
+
+        # fill the home cache while the local history is still empty
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        assert 'continue' not in {r['id'] for r in response.json()['rails']}
+
+        client.get('/api/v1/play/100', headers=DEVICE_HEADER)
+        # the real client always reports the /play-resolved season/episode
+        client.post(
+            '/api/v1/progress',
+            headers=DEVICE_HEADER,
+            json={'id': 100, 'time': 600, 'episode': 1},
+        )
+
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        rails = {r['id']: r for r in response.json()['rails']}
+        assert [i['id'] for i in rails['continue']['items']] == [100]
+        assert rails['continue']['items'][0]['progress'] == 20
+
+
 class TestLibrary:
     def _device(self, fresh_db, device_id):
         device = seed_device(device_id)

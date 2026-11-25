@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Request
 
 import viewmodels as vm
+from devices import storage
 from routers.deps import error, registered
 from services import proxy
 
@@ -13,10 +14,11 @@ router = APIRouter(
     tags=['browse']
 )
 
-# /home fans out to ~9 upstream endpoints plus one enrichment request per
+# /home fans out to ~7 upstream endpoints plus one enrichment request per
 # «continue» item — expensive enough to cache briefly per device (the rails
-# barely change within a minute). Invalidated on settings changes, which are
-# the only user action that alters the shaped payload (poster sizes).
+# barely change within a minute). Invalidated on settings changes (poster
+# sizes reshape the cards) and on playback activity (the local-history
+# «continue» rail); the TTL covers everything else.
 _HOME_CACHE_TTL = 30
 _home_cache: dict = {}
 
@@ -41,64 +43,40 @@ def invalidate_home_cache(
     _home_cache.pop(device_id, None)
 
 
-async def _enrich(
-    kp,
-    items
+async def _continue_cards(
+    current
 ):
-    """/watching/* entries are shallow (no year/rating/plot), so swap them
-    for the full items; keep the shallow one when the request fails. The
-    new-episode counter (`new`) only exists on the shallow /watching/serials
-    entries, so carry it over onto the full item."""
+    """«Продолжить просмотр» — only the device's local history (upstream
+    /watching/* is account-wide and is not read here). One row per title,
+    newest first; the resume pointer (season/episode, position) comes from
+    the local row, the card art/meta from the enriched full item."""
+    rows = storage.get_device_history(current.id, 12, 0)
+    if not rows:
+        return []
+
     detailed = await asyncio.gather(*[
-        kp.api(f'/items/{i["id"]}', params={'nolinks': 1})
-        for i in items
+        current.kp.api(f'/items/{r["item_id"]}', params={'nolinks': 1})
+        for r in rows
     ])
 
-    result = []
-    for shallow, full in zip(items, detailed):
+    settings = current.settings
+    cards = []
+    for row, full in zip(rows, detailed):
+        # Titles withdrawn upstream just drop out of the rail.
         if full is None or 'item' not in full:
-            result.append(shallow)
-        else:
-            item = full['item']
-            if item.get('new') is None and shallow.get('new') is not None:
-                item['new'] = shallow['new']
-            result.append(item)
+            continue
+        card = vm.card(full['item'], settings)
+        if row['season']:
+            card['media'] = {
+                'season': row['season'],
+                'number': row['episode'],
+            }
+        pct = vm.progress_pct(row['duration'], row['position'])
+        if pct:
+            card['progress'] = pct
+        cards.append(card)
 
-    return result
-
-
-def _continue_media(
-    item
-):
-    """Resume pointer for a «Продолжить просмотр» card: the episode/video
-    pick_playable would start, with its saved position. None when the title
-    has no watch activity at all — a never-started entry is not «продолжить»
-    (and the client drops cards without a resume point anyway)."""
-    playable = vm.pick_playable(item)
-    if playable is None:
-        return None
-    position = (playable.get('watching') or {}).get('time') or 0
-    if position <= 0:
-        # Between episodes (the next one is at 0:00): still a resume point,
-        # but only when something in the title was actually watched.
-        watched_any = any(
-            e.get('watched') == 1
-            for s in item.get('seasons') or []
-            for e in s.get('episodes') or []
-        ) or any(
-            v.get('watched') == 1
-            for v in item.get('videos') or []
-        )
-        if not watched_any:
-            return None
-
-    return {
-        'season': playable.get('season'),
-        'number': playable.get('number'),
-        'title': playable.get('title'),
-        'duration': playable.get('duration'),
-        'time': position,
-    }
+    return cards
 
 
 def _paged(
@@ -133,10 +111,8 @@ async def home(
 
     # /items/fresh and /items/popular require the mandatory `type` parameter,
     # so both are fetched (movies + serials) and merged.
-    (movies, serials, fresh_movies, fresh_serials, popular_movies,
+    (fresh_movies, fresh_serials, popular_movies,
      popular_serials, best_movies, best_serials, subscribed) = await asyncio.gather(
-        kp.api('/watching/movies'),
-        kp.api('/watching/serials', params={'subscribed': 0}),
         kp.api('/items/fresh', params={'type': 'movie'}),
         kp.api('/items/fresh', params={'type': 'serial'}),
         kp.api('/items/popular', params={'type': 'movie'}),
@@ -146,22 +122,12 @@ async def home(
         kp.api('/watching/serials', params={'subscribed': 1})
     )
 
-    # The rail shows at most a screenful of cards — enriching more shallow
-    # /watching entries than that is pure upstream load.
-    continue_items = await _enrich(
-        kp,
-        ((movies or {}).get('items', []) + (serials or {}).get('items', []))[:12]
-    )
+    settings = current.settings
+    continue_cards = await _continue_cards(current)
     fresh = (fresh_movies or {}).get('items', []) + (fresh_serials or {}).get('items', [])
     popular = (popular_movies or {}).get('items', []) + (popular_serials or {}).get('items', [])
     best = (best_movies or {}).get('items', []) + (best_serials or {}).get('items', [])
 
-    settings = current.settings
-    continue_cards = []
-    for i in continue_items:
-        media = _continue_media(i)
-        if media is not None:
-            continue_cards.append(vm.card(i, settings, media=media))
     rails = []
     if continue_cards:
         rails.append({

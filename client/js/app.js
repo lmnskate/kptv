@@ -274,7 +274,6 @@ async function loadDetail(id) {
   t.detail = true;
   t.desc = d.plot || '';
   t.cast = d.cast ? d.cast.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
-  t.subscribed = !!d.subscribed;
   t.bookmarks = d.bookmarks || [];
   t.folders = d.bookmark_folders || [];
   t.seasons = (d.seasons || []).map(function (s) {
@@ -592,9 +591,7 @@ function renderDetail() {
     '</div>' +
     '<div class="d-btns">' +
     '<button class="btn primary focusable" data-act="watch">▶ Смотреть</button>' +
-    '<button class="btn focusable' + (t.subscribed ? ' on' : '') + '" data-act="later"><span class="b-txt">' + (t.subscribed ? '✓ Буду смотреть' : 'Буду смотреть') + '</span></button>' +
     '<button class="btn focusable' + (t.bookmarks.length ? ' on' : '') + '" data-act="bookmark"><span class="b-txt">' + (t.bookmarks.length ? '✓ В закладках' : 'В закладки') + '</span></button>' +
-    '<button class="btn focusable' + (t.watched ? ' on' : '') + '" data-act="watched"><span class="b-txt">' + (t.watched ? '✓ Просмотрено' : 'Просмотрено') + '</span></button>' +
     '</div>' +
     (t.desc ? '<p class="d-desc">' + esc(t.desc) + '</p>' : '') +
     (t.cast.length ? '<div class="d-cast"><span class="cast-label">В ролях:</span>' + t.cast.map(function (a) { return '<span class="actor">' + esc(a) + '</span>'; }).join('') + '</div>' : '') +
@@ -1600,7 +1597,16 @@ function enterMenu(rows, f) {
   for (var k = 0; k < rows[0].length; k++) {
     if (rows[0][k].dataset.nav === state.section) { f.c = k; break; }
   }
+  /* вход мог быть удерживаемой клавишей — её автоповторы гасим в keydown,
+     иначе удержание ↑ «проскакивает» текущий раздел до первого пункта меню */
+  menuRepeatGuard = true;
 }
+
+/* Автоповтор клавиши, которой вошли в боковое меню, не листает его пункты.
+   Взводится в enterMenu, сбрасывается первым «свежим» (не repeat) keydown —
+   каждое новое удержание начинается с него, так что осознанное листание
+   пунктов меню с автоповтором работает как раньше */
+var menuRepeatGuard = false;
 
 /* выход из меню обратно в контент — на запомненную позицию */
 function leaveMenu(rows, f) {
@@ -3056,50 +3062,6 @@ function toggleBookmarkFolder(i) {
     });
 }
 
-function toggleLater(btn) {
-  var t = state.title;
-  api('/subscription/toggle', { method: 'POST', body: { id: t.id } })
-    .then(function () {
-      t.subscribed = !t.subscribed;
-      btn.classList.toggle('on', t.subscribed);
-      btn.querySelector('.b-txt').textContent = t.subscribed ? '✓ Буду смотреть' : 'Буду смотреть';
-      toast(t.subscribed ? 'Добавлено в «Смотрю»' : 'Убрано из «Смотрю»');
-    })
-    .catch(function (e) {
-      if (e && e.code === 'not_registered') { showRegister(); return; }
-      toast('Ошибка: ' + e.message);
-    });
-}
-
-/* Отметка просмотра на уровне тайтла: флаги серий/версий меняем сразу
-   локально — обновлённый watching придёт из KP при следующем заходе */
-function toggleWatched(btn) {
-  var t = state.title;
-  api('/watching/toggle', { method: 'POST', body: { id: t.id } })
-    .then(function () {
-      t.watched = !t.watched;
-      if (t.seasons) {
-        t.seasons.forEach(function (s) {
-          s.episodes.forEach(function (e) { e.watched = t.watched; });
-        });
-      }
-      if (t.videos) {
-        t.videos.forEach(function (v) { v.watched = t.watched; });
-      }
-      /* фокус остаётся на «Просмотрено», а не перескакивает на «Смотреть»:
-         позицию берём до перерисовки (старые узлы отсоединяются) */
-      var pos = locate(ROWS.detail, btn);
-      renderDetail();
-      FOCUS.detail = pos || { r: 0, c: 0 };
-      applyFocus();
-      toast(t.watched ? 'Отмечено как просмотренное' : 'Отмечено как непросмотренное');
-    })
-    .catch(function (e) {
-      if (e && e.code === 'not_registered') { showRegister(); return; }
-      toast('Ошибка: ' + e.message);
-    });
-}
-
 function activate() {
   var rows = ROWS[state.screen], f = FOCUS[state.screen];
   var elm = rows[f.r] && rows[f.r][f.c];
@@ -3149,8 +3111,6 @@ function activate() {
   if (state.screen === 'detail') {
     var a = elm.dataset.act;
     if (a === 'watch') return openPlayer(state.title.id);
-    if (a === 'later') return toggleLater(elm);
-    if (a === 'watched') return toggleWatched(elm);
     if (a === 'bookmark') return openBookmarkFolders();
     if (elm.dataset.season !== undefined) return seasonSelect(+elm.dataset.season);
     if (elm.dataset.e !== undefined) return openPlayer(state.title.id, +elm.dataset.s, +elm.dataset.e);
@@ -3256,6 +3216,10 @@ document.addEventListener('keydown', function (e) {
     return;
   }
   if (state.screen === 'player') return playerKey(k, e);
+  /* повторы клавиши, которой вошли в меню, гасим — фокус остаётся на пункте
+     текущего раздела, а не уезжает к первому пункту (см. enterMenu) */
+  if (e.repeat && menuRepeatGuard) { e.preventDefault(); return; }
+  menuRepeatGuard = false;
   if (k === 'ArrowLeft') move(-1, 0);
   else if (k === 'ArrowRight') move(1, 0);
   else if (k === 'ArrowUp') move(0, -1);
