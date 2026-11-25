@@ -70,10 +70,10 @@ async def auth_code(
     if codes is None:
         return error(502, 'upstream', 'Сервис авторизации недоступен')
 
-    user_code, device_code = codes
+    user_code, device_code, expires_in = codes
     current.update_code(device_code)
 
-    return {'user_code': user_code}
+    return {'user_code': user_code, 'expires_in': expires_in}
 
 
 @router.get('/poll')

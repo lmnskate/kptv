@@ -126,6 +126,12 @@ html, body {
   font-size: 21px; color: var(--muted);
 }
 
+.register-expires {
+  margin: -16px 0 30px;
+  font-size: 19px;
+  color: var(--muted);
+}
+
 .register-aside { text-align: center; }
 
 .register-qr-card {
@@ -1066,6 +1072,11 @@ html, body {
 .skel-hero { height: 660px; border-radius: 0; }
 .skel-line { width: 260px; height: 30px; margin-bottom: 18px; }
 .skel-card { width: 220px; height: 320px; flex: none; }
+/* те же заглушки внутри сеток — размер карточки сетки */
+.grid .skel-card { width: 276px; height: 414px; }
+/* заглушка подборки — широкая карточка */
+.skel-col { width: 460px; height: 250px; flex: none; }
+.grid .skel-col { width: 276px; height: 160px; }
 
 /* ---------- Инлайн-ошибки с повтором ---------- */
 
@@ -1079,6 +1090,48 @@ html, body {
 /* ---------- Настройки: служебная строка ---------- */
 
 .set-version { margin: 24px 72px 0; font-size: 16px; color: rgba(154,163,178,.6); }
+
+/* ---------- Текстовая подсказка при долгой буферизации ---------- */
+
+#buffering-hint {
+  position: absolute; top: 50%; left: 50%;
+  margin-top: 56px;
+  transform: translateX(-50%);
+  z-index: 6;
+  font-size: 20px; color: #cfd4dd;
+  text-shadow: 0 2px 10px rgba(0,0,0,.8);
+  white-space: nowrap;
+}
+
+/* ---------- Оверлей неустранимой ошибки плеера ---------- */
+
+#player-error {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  z-index: 12;
+  text-align: center;
+  background: rgba(12,14,19,.94);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  padding: 42px 60px;
+}
+#player-error .pe-title { font-size: 30px; font-weight: 800; }
+#player-error .pe-sub { margin: 12px 0 26px; font-size: 19px; color: var(--muted); }
+/* единственное действие на экране — подсвечено всегда, без фокус-механики */
+#player-error .btn { box-shadow: 0 0 0 3px #fff, 0 8px 24px rgba(0,0,0,.45); }
+
+/* ---------- Субтитры ---------- */
+
+/* вид по умолчанию на ТВ мелкий и без подложки — делаем читаемым.
+   Поддержка ::cue частичная на старых движках: где нет — останется
+   вид браузера, хуже не станет */
+#pv-video::cue {
+  font-size: 30px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0,0,0,.65);
+  text-shadow: 0 2px 6px rgba(0,0,0,.9);
+}
 
 /* ---------- Модал закладок ---------- */
 

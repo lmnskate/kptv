@@ -2,7 +2,7 @@ import aiohttp
 
 # Single source for the app version: surfaced in the FastAPI/Swagger title,
 # the MSX start page, the client settings screen and the admin tooling.
-APP_VERSION = '1.7.0'
+APP_VERSION = '1.7.1'
 
 # KinoPub API
 BASE_URL = 'https://api.service-kp.com/v1'

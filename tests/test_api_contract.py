@@ -45,12 +45,12 @@ class TestDeviceIdentification:
 class TestRegistration:
     def test_code_flow_persists_device_row(self, client, monkeypatch):
         async def fake_get_codes():
-            return ('USER1', 'device-code-1')
+            return ('USER1', 'device-code-1', 1800)
 
         monkeypatch.setattr(auth_router.KinoPub, 'get_codes', fake_get_codes)
         response = client.post('/api/v1/auth/code', headers={'X-Device-Id': 'new-tv'})
         assert response.status_code == 200
-        assert response.json() == {'user_code': 'USER1'}
+        assert response.json() == {'user_code': 'USER1', 'expires_in': 1800}
         entry = storage.get_device_by_id('new-tv')
         assert entry is not None
         assert entry['code'] == 'device-code-1'
@@ -66,7 +66,7 @@ class TestRegistration:
 
     def test_registered_device_gets_409(self, client, registered_device, monkeypatch):
         async def fake_get_codes():
-            return ('USER1', 'device-code-1')
+            return ('USER1', 'device-code-1', 1800)
 
         monkeypatch.setattr(auth_router.KinoPub, 'get_codes', fake_get_codes)
         response = client.post(
@@ -78,7 +78,7 @@ class TestRegistration:
 
     def test_rate_limit_after_five_requests(self, client, monkeypatch):
         async def fake_get_codes():
-            return ('USER1', 'device-code-1')
+            return ('USER1', 'device-code-1', 1800)
 
         monkeypatch.setattr(auth_router.KinoPub, 'get_codes', fake_get_codes)
         statuses = [

@@ -7,7 +7,7 @@
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
 <title>KPTV — KinoPub для Smart TV</title>
-<link rel="stylesheet" href="css/client.css?v=57">
+<link rel="stylesheet" href="css/client.css?v=59">
 <!-- hls.min.js грузится лениво из app.js при первом воспроизведении -->
 </head>
 <body>
@@ -28,6 +28,7 @@
           <div class="reg-step"><span>3</span>Введите код ниже или отсканируйте QR-код</div>
         </div>
         <div id="register-code" class="register-code">·····</div>
+        <div id="register-expires" class="register-expires hidden"></div>
         <div id="register-hint" class="register-hint">Ожидаем подключения…</div>
         <div id="register-retry" class="btn focusable hidden">Повторить</div>
       </div>
@@ -88,6 +89,7 @@
     <div id="player-video"><video id="pv-video"></video></div>
     <div id="player-paused" class="hidden"><svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></div>
     <div id="player-buffering" class="hidden"><svg viewBox="0 0 50 50"><circle class="buf-bg" cx="25" cy="25" r="20" fill="none" stroke-width="5"/><circle class="buf-arc" cx="25" cy="25" r="20" fill="none" stroke-width="5" stroke-linecap="round"/></svg></div>
+    <div id="buffering-hint" class="hidden">Медленное соединение, подождите…</div>
     <div id="player-autonext" class="hidden">
       <div class="an-text">Следующая серия</div>
       <div class="an-side">
@@ -112,6 +114,11 @@
         <div id="player-controls"></div>
       </div>
     </div>
+    <div id="player-error" class="hidden">
+      <div class="pe-title">Не удалось воспроизвести</div>
+      <div class="pe-sub">Попробуйте ещё раз позже</div>
+      <button class="btn primary" data-act="player-back">Назад</button>
+    </div>
     <div id="player-popup" class="hidden"></div>
   </section>
 
@@ -119,6 +126,6 @@
   <div id="modal" class="hidden"><div id="modal-box"></div></div>
 </div>
 <script src="js/api.js?v=23"></script>
-<script src="js/app.js?v=75"></script>
+<script src="js/app.js?v=77"></script>
 </body>
 </html>

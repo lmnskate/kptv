@@ -98,6 +98,7 @@ var state = {
   season: 0,            // индекс сезона
   episode: 0,           // индекс серии
   playing: false,
+  playerError: false,
   playInfo: null,       // последний ответ /play
   hls: null,
   qualityH: null,       // выбранная высота потока (null = Авто)
@@ -411,6 +412,85 @@ function topRow() {
   return Array.prototype.slice.call(document.querySelectorAll('#topnav .focusable'));
 }
 
+/* Большой баннер главной: кандидаты — «Новинки» с широким фоном (до 5).
+   Баннер ротирует их раз в ~10 с, меняя содержимое на месте — фокус и
+   прокрутка экрана не трогаются */
+function heroCandidates(home) {
+  var fresh = ((home.rails || []).filter(function (r) { return r.id === 'fresh'; })[0] || {}).items || [];
+  var out = [];
+  fresh.forEach(function (raw) {
+    if (out.length >= 5) return;
+    var t = adaptCard(raw);
+    if (!t.backdrop) return;
+    remember(t);
+    out.push(t);
+  });
+  if (!out.length && fresh.length) {
+    var first = adaptCard(fresh[0]);
+    remember(first);
+    out.push(first);
+  }
+  return out;
+}
+
+function heroNode(f) {
+  var hg = grad(f, 115);
+  var hero = el('section', 'hero vrow');
+  hero.innerHTML =
+    '<div class="hero-bg" style="background:' + hg + '"' + artAttrs(f.backdrop || f.poster, hg) + '></div>' +
+    '<div class="hero-fade"></div>' +
+    '<div class="hero-info">' +
+    '<div class="hero-tag">' + esc(typeLabel(f)) + '</div>' +
+    '<h1>' + esc(f.name) + '</h1>' +
+    '<div class="meta">' + kpBadge(f) +
+    (f.year ? '<span>' + f.year + '</span>' : '') +
+    (f.q4k ? '<span class="uhd">4K</span>' : '') +
+    '</div>' +
+    '<div class="hero-btns">' +
+    '<button class="btn primary focusable" data-act="watch">▶ Смотреть</button>' +
+    '<button class="btn focusable" data-act="more">Подробнее</button>' +
+    '</div>' +
+    '</div>';
+  FEATURED_ID = f.id;
+  hero.dataset.id = f.id;
+  return hero;
+}
+
+var heroRotation = { items: [], ix: 0, timer: null };
+
+function rotateHero() {
+  var items = heroRotation.items;
+  var hero = document.querySelector('#home-content .hero');
+  if (!items.length || !hero) return;
+  heroRotation.ix = (heroRotation.ix + 1) % items.length;
+  var f = items[heroRotation.ix];
+  FEATURED_ID = f.id;
+  hero.dataset.id = f.id;
+  var art = f.backdrop || f.poster;
+  var g = grad(f, 115);
+  hero.querySelector('.hero-bg').style.background =
+    art ? 'url("' + art + '") center/cover, ' + g : g;
+  hero.querySelector('.hero-tag').textContent = typeLabel(f);
+  hero.querySelector('h1').textContent = f.name;
+  hero.querySelector('.meta').innerHTML =
+    kpBadge(f) +
+    (f.year ? '<span>' + f.year + '</span>' : '') +
+    (f.q4k ? '<span class="uhd">4K</span>' : '');
+}
+
+function startHeroRotation() {
+  stopHeroRotation();
+  heroRotation.timer = setInterval(function () {
+    /* крутим баннер только на видимой главной */
+    if (state.screen === 'home') rotateHero();
+  }, 10000);
+}
+
+function stopHeroRotation() {
+  if (heroRotation.timer) clearInterval(heroRotation.timer);
+  heroRotation.timer = null;
+}
+
 function renderHome() {
   renderNav();
   var c = $('#home-content');
@@ -421,34 +501,8 @@ function renderHome() {
   var railById = {};
   rails.forEach(function (r) { railById[r.id] = r; });
 
-  var featured = null;
-  var freshItems = (railById.fresh || {}).items || [];
-  featured = freshItems.map(adaptCard).find(function (t) { return t.backdrop; })
-    || (freshItems[0] && adaptCard(freshItems[0]))
-    || null;
-  if (featured) remember(featured);
-
-  if (featured) {
-    var f = featured;
-    var hg = grad(f, 115);
-    var hero = el('section', 'hero vrow');
-    hero.innerHTML =
-      '<div class="hero-bg" style="background:' + hg + '"' + artAttrs(f.backdrop || f.poster, hg) + '></div>' +
-      '<div class="hero-fade"></div>' +
-      '<div class="hero-info">' +
-      '<div class="hero-tag">' + esc(typeLabel(f)) + '</div>' +
-      '<h1>' + esc(f.name) + '</h1>' +
-      '<div class="meta">' + kpBadge(f) +
-      (f.year ? '<span>' + f.year + '</span>' : '') +
-      (f.q4k ? '<span class="uhd">4K</span>' : '') +
-      '</div>' +
-      '<div class="hero-btns">' +
-      '<button class="btn primary focusable" data-act="watch">▶ Смотреть</button>' +
-      '<button class="btn focusable" data-act="more">Подробнее</button>' +
-      '</div>' +
-      '</div>';
-    c.appendChild(hero);
-  }
+  var featured = heroRotation.items[heroRotation.ix] || null;
+  if (featured) c.appendChild(heroNode(featured));
 
   rails.forEach(function (r) {
     if (r.id === 'continue') {
@@ -460,7 +514,9 @@ function renderHome() {
     } else {
       var cards = r.items.map(adaptCard);
       cards.forEach(remember);
-      if (cards.length) c.appendChild(rail(r.title, cards.map(posterCard)));
+      if (!cards.length) return; /* рельса пустая — не рисуем её вовсе */
+      cards = cards.slice(0, HOME_RAIL_LIMIT);
+      c.appendChild(rail(r.title, cards.map(posterCard)));
     }
   });
 
@@ -857,10 +913,25 @@ function buildPlayer() {
 
 function playerVideo() { return $('#pv-video'); }
 
+/* Неустранимая ошибка плеера (нативный режим, а у hls.js исчерпана
+   лестница восстановления): вместо чёрного экрана — оверлей с действием */
+function showPlayerError() {
+  state.playerError = true;
+  setBuffering(false);
+  var e = $('#player-error');
+  if (e) e.classList.remove('hidden');
+}
+function hidePlayerError() {
+  state.playerError = false;
+  var e = $('#player-error');
+  if (e) e.classList.add('hidden');
+}
+
 function stopPlayback() {
   state.playing = false;
   autoNextStop();
   setBuffering(false);
+  hidePlayerError();
   clearInterval(state.progressTimer);
   state.progressTimer = null;
   if (state.hls) {
@@ -874,9 +945,23 @@ function stopPlayback() {
 
 /* Индикатор буферизации: «замерший кадр» без спиннера на слабой сети
    выглядит как зависший плеер */
+var bufferingHintTimer = null;
 function setBuffering(on) {
   var b = $('#player-buffering');
   if (b) b.classList.toggle('hidden', !on);
+  /* текст под крутилкой, если буферизация дольше ~5 с: без него «замерший
+     кадр» на слабой сети неотличим от зависшего плеера */
+  clearTimeout(bufferingHintTimer);
+  bufferingHintTimer = null;
+  var h = $('#buffering-hint');
+  if (!h) return;
+  if (on) {
+    bufferingHintTimer = setTimeout(function () {
+      h.classList.remove('hidden');
+    }, 5000);
+  } else {
+    h.classList.add('hidden');
+  }
 }
 
 /* Автопереход к следующей серии: компактная плашка у нижней кромки с
@@ -1690,6 +1775,11 @@ function applyFocus() {
       f.r >= rows.length - 2) {
     loadBookmarksPage();
   }
+  /* лента истории: следующая страница у нижних строк */
+  if (scr === 'history' && !historyState.loading && historyState.hasMore &&
+      f.r >= rows.length - 2) {
+    loadHistoryPage(historyToken, historyState.nextPage);
+  }
   /* результаты поиска: догрузка страниц, пока они соответствуют строке запроса */
   if (scr === 'search' && state.searchResults && !searchState.loading &&
       searchState.hasMore && searchState.query === state.query.trim() &&
@@ -1959,17 +2049,10 @@ function loadHome() {
   return api('/home')
     .then(function (home) {
       DB.home = home;
+      heroRotation.items = heroCandidates(home);
+      heroRotation.ix = 0;
       renderHome();
-      FEATURED_ID = null;
-      var fresh = (home.rails || []).filter(function (r) { return r.id === 'fresh'; })[0];
-      var withBackdrop = (fresh && fresh.items || []).map(adaptCard)
-        .find(function (t) { return t.backdrop; }) || (fresh && fresh.items[0] && adaptCard(fresh.items[0]));
-      if (withBackdrop) {
-        remember(withBackdrop);
-        FEATURED_ID = withBackdrop.id;
-        var hero = document.querySelector('.hero');
-        if (hero) hero.dataset.id = FEATURED_ID;
-      }
+      startHeroRotation();
       SECTION_RENDERED.home = true;
       FOCUS.home = { r: Math.min(1, ROWS.home.length - 1), c: 0 };
       markNavCurrent();
@@ -1985,6 +2068,7 @@ function loadHome() {
 /* Плейсхолдеры, пока /home в полёте: пустой тёмный экран с одним меню
    на старте приложения выглядел сломанным */
 function renderHomeSkeleton() {
+  stopHeroRotation();
   renderNav();
   var c = $('#home-content');
   c.innerHTML = '';
@@ -2007,6 +2091,7 @@ function renderHomeSkeleton() {
 /* Сбой загрузки главной — инлайн-ошибка с кнопкой «Повторить», а не тост,
    который мигнёт и исчезнет */
 function renderHomeError(message) {
+  stopHeroRotation();
   renderNav();
   var c = $('#home-content');
   c.innerHTML = '';
@@ -2033,6 +2118,38 @@ var catalogToken = 0;
 /* сколько карточек показываем в ленте каталога до «Смотреть все» */
 var RAIL_LIMIT = 10;
 
+/* сколько карточек показываем в лентах главной: ленты там смесь фильмов
+   и сериалов, легко 40+ карточек — долистывание пультом до конца занимало
+   минуты. Полные выдачи доступны в «Каталоге» */
+var HOME_RAIL_LIMIT = 20;
+
+/* Скелетон-заглушки, пока раздел грузится: на главной так было изначально,
+   остальные экраны показывали текст «Загрузка…» */
+function skelTrack(count) {
+  var track = el('div', 'track');
+  for (var i = 0; i < count; i++) track.appendChild(el('div', 'skel skel-card'));
+  return track;
+}
+
+function catalogSkeleton() {
+  var wrap = el('div', 'skel-wrap');
+  for (var i = 0; i < 3; i++) {
+    var r = el('section', 'rail' + (i === 0 ? ' rail-first' : ''));
+    r.appendChild(el('h2', 'skel skel-line', ''));
+    r.appendChild(skelTrack(6));
+    wrap.appendChild(r);
+  }
+  return wrap;
+}
+
+function clearSectionSkeleton() {
+  if (!state.sectionGrid) return;
+  Array.prototype.forEach.call(
+    state.sectionGrid.querySelectorAll('.skel-card'),
+    function (sk) { sk.remove(); }
+  );
+}
+
 function openCatalog(type) {
   var token = ++catalogToken;
   switchScreen('catalog');
@@ -2047,15 +2164,18 @@ function openCatalog(type) {
   var c = $('#catalog-content');
   c.innerHTML = '';
   ROWS.catalog = [topRow()];
-  var loading = el('div', 'page-head', '<div class="sub">Загрузка…</div>');
-  c.appendChild(loading);
+  c.appendChild(catalogSkeleton());
+  function clearSkeleton() {
+    var sk = c.querySelector('.skel-wrap');
+    if (sk) sk.remove();
+  }
 
   var pending = 0, made = 0;
   function settle() {
     if (token !== catalogToken) return;
     pending--;
     if (pending > 0) return;
-    loading.remove();
+    clearSkeleton();
     if (!made) {
       /* ничего не загрузилось — даём повторить прямо на месте */
       delete SECTION_RENDERED['catalog:' + type];
@@ -2086,7 +2206,7 @@ function openCatalog(type) {
     }
     genreSlot.appendChild(rail('Жанры', cards, 'rail-first'));
     made++;
-    if (made === 1) loading.remove();
+    if (made === 1) clearSkeleton();
     SECTION_RENDERED['catalog:' + type] = true;
     rebuildRows('catalog', true);
   }, function () {
@@ -2117,7 +2237,7 @@ function openCatalog(type) {
       }
       slot.appendChild(rail(pair[0], cards));
       made++;
-      if (made === 1) loading.remove();
+      if (made === 1) clearSkeleton();
       SECTION_RENDERED['catalog:' + type] = true;
       rebuildRows('catalog', true);
     }, function () {
@@ -2169,6 +2289,7 @@ function openSectionGrid(title, url, homeBack) {
   ROWS.section = [topRow()];
   c.appendChild(el('div', 'page-head', '<h1>' + esc(title) + '</h1>'));
   state.sectionGrid = el('div', 'grid');
+  for (var si = 0; si < 10; si++) state.sectionGrid.appendChild(el('div', 'skel skel-card'));
   c.appendChild(state.sectionGrid);
 
   loadSectionPage(token);
@@ -2186,6 +2307,7 @@ function loadSectionPage(token) {
       .then(function (res) {
         if (token !== sectionToken) return;
         state.sectionLoading = false;
+        clearSectionSkeleton();
         state.sectionHasMore = false;
         state.sectionPage = 1;
         var genres = (res && res.items) || [];
@@ -2200,6 +2322,7 @@ function loadSectionPage(token) {
       .catch(function (e) {
         if (token !== sectionToken) return;
         state.sectionLoading = false;
+        clearSectionSkeleton();
         if (e && e.code === 'not_registered') { showRegister(); return; }
         state.sectionGrid.appendChild(el('div', 'card-sub', 'Ошибка загрузки: ' + esc(e.message)));
         rebuildRows('section', false);
@@ -2213,6 +2336,7 @@ function loadSectionPage(token) {
     .then(function (res) {
       if (token !== sectionToken) return;
       state.sectionLoading = false;
+      clearSectionSkeleton();
       var items = (res.items || []).map(adaptCard);
       items.forEach(remember);
       items.forEach(function (t) { state.sectionGrid.appendChild(posterCard(t)); });
@@ -2226,6 +2350,7 @@ function loadSectionPage(token) {
     .catch(function (e) {
       if (token !== sectionToken) return;
       state.sectionLoading = false;
+      clearSectionSkeleton();
       if (e && e.code === 'not_registered') { showRegister(); return; }
       if (page > 1) {
         toast('Не удалось загрузить ещё: ' + e.message);
@@ -2280,6 +2405,7 @@ function renderCollectionsScreen() {
     });
     rebuildRows('collections', false);
     if (!collectionsState.items.length) {
+      for (var i = 0; i < 10; i++) grid.appendChild(el('div', 'skel skel-col'));
       if (!collectionsState.loading) loadCollectionsPage(token);
     } else if (collectionsState.hasMore && !collectionsState.loading) {
       /* мягкая догрузка следующей страницы, пока пользователь смотрит список */
@@ -2288,8 +2414,10 @@ function renderCollectionsScreen() {
     return;
   }
 
+  for (var ci = 0; ci < 10; ci++) grid.appendChild(el('div', 'skel skel-col'));
   api('/collections/' + cur.id).then(function (data) {
     if (token !== collectionsToken || collectionsState.current !== cur) return;
+    Array.prototype.forEach.call(grid.querySelectorAll('.skel-col'), function (sk) { sk.remove(); });
     var items = (data.items || []).map(adaptCard);
     items.forEach(remember);
     if (items.length) {
@@ -2320,6 +2448,7 @@ function loadCollectionsPage(token) {
     collectionsState.hasMore = !!res.has_more;
     var grid = collectionsGrid;
     if (grid && collectionsState.current === null) {
+      Array.prototype.forEach.call(grid.querySelectorAll('.skel-col'), function (sk) { sk.remove(); });
       cols.forEach(function (col) { grid.appendChild(collectionCard(col)); });
       if (!collectionsState.items.length) {
         grid.appendChild(el('div', 'card-sub', 'Подборок пока нет'));
@@ -2478,7 +2607,17 @@ var searchState = { query: '', page: 0, items: [], hasMore: false, loading: fals
 function scheduleLiveSearch() {
   clearTimeout(searchTimer);
   searchTimer = null;
-  if (state.query.trim().length < 2) return;
+  if (state.query.trim().length < 2) {
+    /* запрос стёрт или укорочен: результаты прошлого запроса больше не
+       соответствуют строке — убираем их и показываем нейтральный экран */
+    if (state.searchResults) {
+      state.searchResults = null;
+      state.searchQuery = '';
+      renderSearch();
+      focusKbLayoutKey();
+    }
+    return;
+  }
   searchTimer = setTimeout(function () { runSearch(true); }, 700);
 }
 
@@ -2582,7 +2721,9 @@ function renderBookmarks() {
     tabs.appendChild(tab);
   });
   c.appendChild(tabs);
-  c.appendChild(el('div', 'grid', '<div class="card-sub" style="grid-column:1/-1">Загрузка…</div>'));
+  var bgrid = el('div', 'grid');
+  for (var bi = 0; bi < 5; bi++) bgrid.appendChild(el('div', 'skel skel-card'));
+  c.appendChild(bgrid);
 
   bmState = { folder: state.bookmarkFolder, page: 0, hasMore: false, loading: false };
   buildBrowseRows('bookmarks');
@@ -2599,8 +2740,10 @@ function loadBookmarksPage() {
       bmState.loading = false;
       var grid = $('#bookmarks-content .grid');
       if (!grid || bmState.folder !== state.bookmarkFolder) return;
-      var placeholder = grid.querySelector('.card-sub');
-      if (placeholder) placeholder.remove();
+      Array.prototype.forEach.call(
+        grid.querySelectorAll('.skel-card, .card-sub'),
+        function (node) { node.remove(); }
+      );
       var items = (res.items || []).map(adaptCard);
       if (!items.length && page === 1) {
         grid.appendChild(el('div', 'card-sub', 'В этой папке пусто'));
@@ -2626,21 +2769,68 @@ function loadBookmarksPage() {
 
 function openBookmarks() {
   switchScreen('bookmarks');
-  if (SECTION_RENDERED.bookmarks && state.bookmarkFolders.length) {
-    markNavCurrent(); applyFocus(); return;
-  }
+  /* список папок перечитываем всегда: счётчики меняются тумблером на
+     карточке, новые папки создаются на сайте. Сетки тайтлов при этом не
+     трогаем — вкладки обновляются поверх уже загруженного контента */
   api('/bookmarks')
     .then(function (res) {
-      state.bookmarkFolders = res.folders || [];
-      state.bookmarkFolder = state.bookmarkFolders.length ? state.bookmarkFolders[0].id : null;
+      var folders = res.folders || [];
+      var prev = state.bookmarkFolder;
+      state.bookmarkFolders = folders;
+      if (!folders.length) {
+        state.bookmarkFolder = null;
+        SECTION_RENDERED.bookmarks = true;
+        renderBookmarks();
+        return;
+      }
+      var stillThere = false;
+      folders.forEach(function (f) { if (f.id === prev) stillThere = true; });
+      state.bookmarkFolder = stillThere ? prev : folders[0].id;
+      if (SECTION_RENDERED.bookmarks && stillThere) {
+        updateBookmarkTabs();
+        markNavCurrent();
+        applyFocus();
+        return;
+      }
       SECTION_RENDERED.bookmarks = true;
       renderBookmarks();
       FOCUS.bookmarks = { r: 1, c: 0 };
     })
     .catch(function (e) {
       if (e && e.code === 'not_registered') { showRegister(); return; }
-      toast('Ошибка: ' + e.message);
+      /* как в каталоге: инлайн-ошибка с кнопкой повтора, а не один тост —
+         иначе после сбоя остаётся пустой экран */
+      var c = $('#bookmarks-content');
+      c.innerHTML = '';
+      c.appendChild(el('div', 'page-head',
+        '<h1>Закладки</h1><div class="sub">Не удалось загрузить: ' + esc(e.message) + '</div>'));
+      var retry = el('button', 'btn primary focusable', 'Повторить');
+      retry.dataset.act = 'retry-bookmarks';
+      var wrap = el('div', 'retry-wrap');
+      wrap.appendChild(retry);
+      c.appendChild(wrap);
+      ROWS.bookmarks = [topRow(), [retry]];
+      FOCUS.bookmarks = { r: 1, c: 0 };
+      markNavCurrent();
+      applyFocus();
     });
+}
+
+/* перерисовка вкладок папок поверх уже загруженной сетки: свежие счётчики
+   и папки, созданные на сайте; фокус остаётся на прежнем элементе */
+function updateBookmarkTabs() {
+  var c = $('#bookmarks-content');
+  var old = c.querySelector('.tabs');
+  if (!old) return;
+  var tabs = el('div', 'tabs');
+  state.bookmarkFolders.forEach(function (f) {
+    var tab = el('div', 'tab focusable' + (f.id === state.bookmarkFolder ? ' active' : ''));
+    tab.innerHTML = esc(f.title) + '<span class="tab-count">' + (f.count != null ? f.count : 0) + '</span>';
+    tab.dataset.folder = f.id;
+    tabs.appendChild(tab);
+  });
+  c.replaceChild(tabs, old);
+  rebuildRows('bookmarks', true);
 }
 
 function bookmarkTab(tab) {
@@ -2650,7 +2840,10 @@ function bookmarkTab(tab) {
     function (t) { t.classList.toggle('active', t === tab); }
   );
   var grid = $('#bookmarks-content .grid');
-  if (grid) grid.innerHTML = '<div class="card-sub" style="grid-column:1/-1">Загрузка…</div>';
+  if (grid) {
+    grid.innerHTML = '';
+    for (var bi = 0; bi < 5; bi++) grid.appendChild(el('div', 'skel skel-card'));
+  }
   bmState = { folder: state.bookmarkFolder, page: 0, hasMore: false, loading: false };
   loadBookmarksPage();
 }
@@ -2661,6 +2854,11 @@ var historyToken = 0;
 var historyTab = 'all';
 var historyItems = [];
 var HISTORY_TABS = [['all', 'Все'], ['movie', 'Фильмы'], ['serial', 'Сериалы']];
+
+/* пагинация ленты истории: при открытии грузим первую страницу, остальные
+   подтягиваются, когда фокус подходит к нижним строкам (как в сетках
+   раздела/закладок/поиска) */
+var historyState = { nextPage: 1, hasMore: true, loading: false, seen: {} };
 
 /* Единая лента без деления на «продолжить»/«просмотренное»: бэкенд отдаёт
    одну карточку на тайтл (серии схлопнуты в «Сезон · Серию» самого свежего
@@ -2768,50 +2966,60 @@ function renderHistory() {
   body.id = 'history-body';
   c.appendChild(body);
 
-  var seen = {}, built = false;
   historyItems = [];
+  historyState = { nextPage: 1, hasMore: true, loading: false, seen: {} };
+  loadHistoryPage(token, 1);
+}
 
-  /* страницы истории грузятся последовательно и небыстро — дорисовываем
-     по мере поступления, чтобы экран был живым сразу; сбой страницы не
-     блокирует навигацию по уже загруженному */
-  function loadPage(page) {
-    api('/history?page=' + page)
-      .then(function (res) {
-        if (token !== historyToken) return;
-        var fresh = [];
-        (res.items || []).forEach(function (raw) {
-          var t = adaptCard(raw);
-          if (!t.id || seen[t.id]) return;
-          seen[t.id] = 1;
-          remember(t);
-          historyItems.push(t);
-          fresh.push(t);
-        });
-        appendHistoryCards(fresh);
-        if (historyItems.length) {
-          rebuildRows('history', built);
-          built = true;
-        }
-        if (res.has_more) { loadPage(page + 1); }
-        else if (!historyItems.length || !historyFiltered().length) {
-          renderHistoryBody(true);
-        }
-      })
-      .catch(function (e) {
-        if (token !== historyToken) return;
-        if (e && e.code === 'not_registered') { showRegister(); return; }
-        if (historyItems.length) {
-          toast('Не удалось догрузить историю целиком');
-        } else {
-          c.appendChild(el('div', 'empty-state',
-            '<div class="es-title">Ошибка загрузки</div>' +
-            '<div class="es-sub">' + esc(e.message) + '</div>'));
-          rebuildRows('history', false);
-        }
+/* Одна страница ленты истории: дорисовываем инкрементально, чтобы экран был
+   живым сразу; сбой страницы не блокирует навигацию по уже загруженному */
+function loadHistoryPage(token, page) {
+  if (token == null) token = historyToken;
+  if (historyState.loading || !historyState.hasMore) return;
+  historyState.loading = true;
+  api('/history?page=' + page)
+    .then(function (res) {
+      if (token !== historyToken) return;
+      historyState.loading = false;
+      historyState.nextPage = page + 1;
+      historyState.hasMore = !!res.has_more;
+      var fresh = [];
+      (res.items || []).forEach(function (raw) {
+        var t = adaptCard(raw);
+        if (!t.id || historyState.seen[t.id]) return;
+        historyState.seen[t.id] = 1;
+        remember(t);
+        historyItems.push(t);
+        fresh.push(t);
       });
-  }
-
-  loadPage(1);
+      appendHistoryCards(fresh);
+      /* первая страница пуста (тайтлы сняты upstream), но дальше ещё есть —
+         идём дальше; экран пока пустой */
+      if (!historyItems.length && historyState.hasMore) {
+        loadHistoryPage(token, page + 1);
+        return;
+      }
+      if (historyItems.length) {
+        rebuildRows('history', page > 1);
+      } else if (!historyState.hasMore) {
+        renderHistoryBody(true);
+      }
+    })
+    .catch(function (e) {
+      if (token !== historyToken) return;
+      historyState.loading = false;
+      historyState.hasMore = false; /* оборванную ленту дальше не дёргаем */
+      if (e && e.code === 'not_registered') { showRegister(); return; }
+      if (historyItems.length) {
+        toast('Не удалось догрузить историю целиком');
+      } else {
+        var c = $('#history-content');
+        c.appendChild(el('div', 'empty-state',
+          '<div class="es-title">Ошибка загрузки</div>' +
+          '<div class="es-sub">' + esc(e.message) + '</div>'));
+        rebuildRows('history', false);
+      }
+    });
 }
 
 function openHistory() {
@@ -3047,6 +3255,13 @@ function toggleBookmarkFolder(i) {
       t.bookmarks = r.bookmarks || [];
       var nowIn = t.bookmarks.indexOf(f.id) >= 0;
       if (f.count != null) f.count += (nowIn ? 1 : 0) - (wasIn ? 1 : 0);
+      /* та же папка в списке раздела «Закладки» — там свой объект со
+         своим счётчиком, синхронизируем оба */
+      state.bookmarkFolders.forEach(function (bf) {
+        if (bf.id === f.id && bf.count != null) {
+          bf.count += (nowIn ? 1 : 0) - (wasIn ? 1 : 0);
+        }
+      });
       renderModal();
       syncBookmarkButton();
     })
@@ -3080,6 +3295,7 @@ function activate() {
       delete SECTION_RENDERED['catalog:' + state.catalogType];
       return openCatalog(state.catalogType);
     }
+    if (elm.dataset.act === 'retry-bookmarks') return openBookmarks();
     if (elm.dataset.act === 'retry-section') return loadSectionPage();
     if (elm.dataset.key || elm.dataset.kb) return searchKey(elm);
     if (elm.dataset.folder) return bookmarkTab(elm);
@@ -3133,6 +3349,12 @@ function normKey(e) {
 }
 
 function playerKey(k, e) {
+  if (state.playerError) {
+    /* оверлей ошибки: подтверждение или назад — единственное действие */
+    if (k === 'Enter' || k === 'Backspace') goBack();
+    e.preventDefault();
+    return;
+  }
   if (state.autoNext) {
     /* отсчёт автоперехода: стрелки — между кнопками, OK — выбрать,
        Backspace — отменить и остаться в плеере */
@@ -3161,7 +3383,18 @@ function playerKey(k, e) {
   }
   if (k === 'Backspace') { goBack(); e.preventDefault(); return; }
   var vis = $('#player-overlay').classList.contains('visible');
-  if (!vis) { showOverlay(); e.preventDefault(); return; }
+  if (!vis) {
+    /* панель скрыта: транспортные клавиши работают сразу, остальные —
+       только показывают панель (меньше «холостых» нажатий) */
+    if (k === 'ArrowLeft') activateControl('rew');
+    else if (k === 'ArrowRight') activateControl('fwd');
+    else if (k === ' ' || k === 'Pause' || k === 'Play') activateControl('play');
+    else if (k === 'Rewind') activateControl('rew');
+    else if (k === 'FastForward') activateControl('fwd');
+    showOverlay();
+    e.preventDefault();
+    return;
+  }
   var f = FOCUS.player;
   if (k === 'ArrowUp') {
     if (f.r > 0) { f.r = 0; applyFocus(); }
@@ -3206,7 +3439,22 @@ document.addEventListener('keydown', function (e) {
   else if (k === 'ArrowUp') move(0, -1);
   else if (k === 'ArrowDown') move(0, 1);
   else if (k === 'Enter') activate();
-  else if (k === 'Backspace') goBack();
+  else if (k === 'Backspace') {
+    /* на экране поиска Backspace стирает символы; «назад» — только когда
+       строка пустая (на остальных экранах — как раньше) */
+    if (state.screen === 'search' && state.query.length) {
+      state.query = state.query.slice(0, -1);
+      updateQueryBar();
+      scheduleLiveSearch();
+    } else goBack();
+  }
+  else if (state.screen === 'search' && k.length === 1 &&
+           !e.ctrlKey && !e.altKey && !e.metaKey) {
+    /* печать с физической клавиатуры: символ сразу в строку запроса */
+    state.query += k;
+    updateQueryBar();
+    scheduleLiveSearch();
+  }
   else return;
   e.preventDefault();
 });
@@ -3250,7 +3498,10 @@ document.addEventListener('keydown', function (e) {
   });
   video.addEventListener('error', function () {
     setBuffering(false);
-    if (state.screen === 'player') toast('Ошибка воспроизведения');
+    /* hls.js жив — сработает его лестница восстановления (startLoad /
+       recoverMediaError / переход на нативный плеер), не мешаем. Оверлей
+       показываем только когда дальше некуда: нативный плеер и без hls.js */
+    if (state.screen === 'player' && !state.hls) showPlayerError();
   });
 })();
 
@@ -3310,6 +3561,10 @@ $('#stage').addEventListener('click', function (e) {
     return;
   }
   if (state.screen === 'player') {
+    if (state.playerError) {
+      if (e.target.closest('[data-act="player-back"]')) goBack();
+      return;
+    }
     if (state.autoNext) {
       var an = e.target.closest('[data-an]');
       if (an) { an.dataset.an === 'play' ? autoNextRun() : autoNextStop(); }
@@ -3431,6 +3686,7 @@ function showRegister() {
   switchScreen('register');
   ROWS.register = [[]];
   $('#register-code').textContent = '·····';
+  $('#register-expires').classList.add('hidden');
   $('#register-hint').textContent = 'Ожидаем подключения…';
   $('#register-qr').classList.add('hidden');
   $('#register-retry').classList.add('hidden');
@@ -3439,6 +3695,20 @@ function showRegister() {
     .then(function (data) {
       if (token !== registerToken) return;
       $('#register-code').textContent = data.user_code;
+      /* срок жизни кода от KinoPub: без подписи пользователь не понимает,
+         почему «вчерашний» код не подошёл */
+      var exp = $('#register-expires');
+      if (exp) {
+        if (data.expires_in) {
+          var mins = Math.round(data.expires_in / 60);
+          exp.textContent = mins >= 1
+            ? 'Код действует ' + mins + ' мин.'
+            : 'Код действует ' + data.expires_in + ' сек.';
+          exp.classList.remove('hidden');
+        } else {
+          exp.classList.add('hidden');
+        }
+      }
       var qr = $('#register-qr');
       qr.src = '/api/v1/auth/qr.svg?code=' + encodeURIComponent(data.user_code);
       qr.classList.remove('hidden');

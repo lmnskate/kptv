@@ -167,7 +167,11 @@ class KinoPub:
                 )
                 result = await response.json()
 
-                return result['user_code'], result['code']
+                return (
+                    result['user_code'],
+                    result['code'],
+                    result.get('expires_in')
+                )
         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError) as e:
             logger.warning('Failed to fetch registration codes: %s', e)
             return None
