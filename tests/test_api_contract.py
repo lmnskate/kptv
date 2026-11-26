@@ -3,6 +3,8 @@ registration flow, settings round-trip, pagination clamping, per-device
 history and upstream-failure statuses. KinoPub is stubbed per device via
 FakeKp; no network is touched."""
 
+import time
+
 import pytest
 from conftest import FakeKp, kp_item, seed_device
 
@@ -10,6 +12,7 @@ import config.globals as g
 from devices import storage
 from kinopub.client import KinoPub
 from routers import auth as auth_router
+from routers import library as library_router
 
 DEVICE_HEADER = {'X-Device-Id': 'tv-tests-1'}
 
@@ -503,3 +506,228 @@ class TestLibrary:
         )
         assert response.status_code == 502
         assert error_code(response) == 'upstream'
+
+
+class TestMediaGuards:
+    """The proxy is internet-facing: only registered devices may relay."""
+
+    def test_proxy_requires_a_registered_device(self, client, fresh_db):
+        response = client.get(
+            '/api/v1/proxy?url=https://cdn.kino.test/v.m3u8',
+            headers={'X-Device-Id': 'ghost-tv'},
+        )
+        assert response.status_code == 401
+        assert error_code(response) == 'not_registered'
+
+    def test_subtitle_requires_a_registered_device(self, client, fresh_db):
+        response = client.get(
+            '/api/v1/subtitle?url=https://cdn.kino.test/v.srt',
+            headers={'X-Device-Id': 'ghost-tv'},
+        )
+        assert response.status_code == 401
+        assert error_code(response) == 'not_registered'
+
+    def test_unknown_domain_is_403_for_registered_devices(self, client, registered_device):
+        response = client.get(
+            '/api/v1/proxy?url=https://evil.test/v.m3u8',
+            headers=DEVICE_HEADER,
+        )
+        assert response.status_code == 403
+
+
+class TestErrorEnvelope:
+    """Framework-level rejections wear the same {"error": {...}} envelope."""
+
+    def test_unknown_path_is_a_json_404(self, client, registered_device):
+        response = client.get('/api/v1/nope', headers=DEVICE_HEADER)
+        assert response.status_code == 404
+        assert error_code(response) == 'not_found'
+
+    def test_invalid_path_param_is_a_json_422(self, client, registered_device):
+        response = client.get('/api/v1/items/abc', headers=DEVICE_HEADER)
+        assert response.status_code == 422
+        assert error_code(response) == 'bad_request'
+
+
+class TestRegistrationHygiene:
+    def test_code_request_prunes_stale_unactivated_rows(self, client, monkeypatch):
+        async def fake_get_codes():
+            return ('USER1', 'device-code-1', 1800)
+
+        monkeypatch.setattr(auth_router.KinoPub, 'get_codes', fake_get_codes)
+        storage.create_device({
+            'id': 'stale-tv',
+            'created_at': int(time.time()) - 25 * 3600,
+        })
+        response = client.post('/api/v1/auth/code', headers={'X-Device-Id': 'fresh-tv'})
+        assert response.status_code == 200
+        assert storage.get_device_by_id('stale-tv') is None
+
+    def test_poll_success_clears_the_code(self, client, monkeypatch):
+        async def fake_check(code):
+            return {'access_token': 'AT', 'refresh_token': 'RT'}
+
+        # update_tokens swaps in a real KinoPub instance whose notify() call
+        # must not hit the network — neuter the class method for this test.
+        async def fake_api(self, path, params=None, method='GET', **kwargs):
+            return None
+
+        monkeypatch.setattr(auth_router.KinoPub, 'check_registration', fake_check)
+        monkeypatch.setattr(KinoPub, 'api', fake_api)
+        storage.create_device({'id': 'poll-tv', 'code': 'CODE42'})
+        response = client.get('/api/v1/auth/poll', headers={'X-Device-Id': 'poll-tv'})
+        assert response.json() == {'status': 'active'}
+        assert storage.get_device_by_id('poll-tv')['code'] is None
+
+    def test_qr_is_rate_limited(self, client):
+        statuses = [
+            client.get('/api/v1/auth/qr.svg?code=ABC123').status_code
+            for _ in range(6)
+        ]
+        assert statuses == [200, 200, 200, 200, 200, 429]
+
+
+class TestSettingsValidation:
+    def test_bad_poster_size_is_422(self, client, registered_device):
+        response = client.post(
+            '/api/v1/settings',
+            headers=DEVICE_HEADER,
+            json={'poster_size': 'huge'},
+        )
+        assert response.status_code == 422
+        assert error_code(response) == 'bad_request'
+
+    def test_hevc_patch_is_ignored(self, client, registered_device):
+        # HEVC is aligned with real browser support by /play on every
+        # playback — a manual patch must not stick.
+        response = client.post(
+            '/api/v1/settings',
+            headers=DEVICE_HEADER,
+            json={'hevc': True},
+        )
+        assert response.status_code == 200
+        assert response.json()['settings']['hevc'] is False
+
+
+class TestBookmarks:
+    def test_folder_counts_come_from_the_folder_payload(self, client, registered_device):
+        registered_device.kp.responses['/bookmarks'] = {'items': [
+            {'id': 1, 'title': 'Смотреть позже', 'count': 22},
+            {'id': 2, 'title': 'Избранное', 'count': 3},
+        ]}
+        response = client.get('/api/v1/bookmarks', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        assert response.json()['folders'] == [
+            {'id': 1, 'title': 'Смотреть позже', 'count': 22},
+            {'id': 2, 'title': 'Избранное', 'count': 3},
+        ]
+        # no per-folder content fetches — the count travels in the payload
+        assert [c['path'] for c in registered_device.kp.calls] == ['/bookmarks']
+
+    def test_folders_upstream_failure_is_502(self, client, registered_device):
+        registered_device.kp.responses['/bookmarks'] = None
+        response = client.get('/api/v1/bookmarks', headers=DEVICE_HEADER)
+        assert response.status_code == 502
+        assert error_code(response) == 'upstream'
+
+    def test_toggle_accepts_folder_objects_and_bare_ids(self, client, registered_device):
+        registered_device.kp.responses['/bookmarks/toggle-item'] = {'ok': True}
+        registered_device.kp.responses['/bookmarks/get-item-folders'] = {
+            'folders': [{'id': 2}, 3],
+        }
+        response = client.post(
+            '/api/v1/bookmarks/toggle',
+            headers=DEVICE_HEADER,
+            json={'item': 7, 'folder': 2},
+        )
+        assert response.status_code == 200
+        assert response.json()['bookmarks'] == [2, 3]
+
+    def test_item_detail_bookmarks_accept_objects_and_bare_ids(self, client, registered_device):
+        registered_device.kp.responses['/items/7'] = {
+            'item': kp_item(7, bookmarks=[{'id': 2}, 3])
+        }
+        body = client.get('/api/v1/items/7', headers=DEVICE_HEADER).json()
+        assert body['bookmarks'] == [2, 3]
+
+
+class TestResumeRules:
+    """Titles that ran to the credits (>=95%) stop being «continue» items."""
+
+    def _playable_item(self, item_id):
+        item = kp_item(item_id)
+        item['videos'] = [{
+            'number': 1,
+            'duration': 3000,
+            'files': [{'quality': '1080p', 'url': {'hls4': 'https://cdn.kino.test/v.m3u8'}}],
+        }]
+        return item
+
+    def test_continue_rail_drops_finished_titles(self, client, registered_device):
+        registered_device.kp.responses['/items/fresh'] = {'items': [kp_item(50)]}
+        registered_device.kp.responses['/items/popular'] = {'items': [kp_item(51)]}
+        registered_device.kp.responses['/items'] = {'items': [kp_item(52)]}
+        registered_device.kp.responses['/watching/serials'] = {'items': []}
+        storage.record_device_history(
+            registered_device.id, 100, 0, 0, position=590, duration=600
+        )
+        registered_device.kp.responses['/items/100'] = {'item': kp_item(100)}
+        response = client.get('/api/v1/home', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        assert 'continue' not in {r['id'] for r in response.json()['rails']}
+
+    def test_play_restarts_a_finished_local_position(self, client, registered_device):
+        registered_device.kp.responses['/items/7'] = {'item': self._playable_item(7)}
+        storage.record_device_history(
+            registered_device.id, 7, 0, 1, position=2950, duration=3000
+        )
+        response = client.get('/api/v1/play/7', headers=DEVICE_HEADER)
+        assert response.status_code == 200
+        assert response.json()['position'] == 0
+
+    def test_unfinished_local_position_wins(self, client, registered_device):
+        item = self._playable_item(8)
+        item['videos'][0]['watching'] = {'time': 10}
+        registered_device.kp.responses['/items/8'] = {'item': item}
+        storage.record_device_history(
+            registered_device.id, 8, 0, 1, position=900, duration=3000
+        )
+        body = client.get('/api/v1/play/8', headers=DEVICE_HEADER).json()
+        assert body['position'] == 900
+
+    def test_progress_stores_the_reported_duration(self, client, registered_device):
+        client.post(
+            '/api/v1/progress',
+            headers=DEVICE_HEADER,
+            json={'id': 55, 'time': 100, 'duration': 3600},
+        )
+        entry = storage.get_device_history_entry(registered_device.id, 55)
+        assert entry['position'] == 100
+        assert entry['duration'] == 3600
+
+    def test_play_and_progress_drop_the_local_history_cache(self, client, registered_device):
+        registered_device.kp.responses['/items/7'] = {'item': self._playable_item(7)}
+        storage.record_device_history(
+            registered_device.id, 7, 0, 1, position=10, duration=3000
+        )
+
+        def cached_pages():
+            return [
+                key for key in library_router._local_history_cache
+                if key[0] == registered_device.id
+            ]
+
+        assert client.get('/api/v1/history', headers=DEVICE_HEADER).status_code == 200
+        assert cached_pages()
+
+        client.get('/api/v1/play/7', headers=DEVICE_HEADER)
+        assert not cached_pages()
+
+        client.get('/api/v1/history', headers=DEVICE_HEADER)
+        assert cached_pages()
+        client.post(
+            '/api/v1/progress',
+            headers=DEVICE_HEADER,
+            json={'id': 7, 'time': 100, 'episode': 1, 'duration': 3000},
+        )
+        assert not cached_pages()

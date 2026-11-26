@@ -226,12 +226,17 @@ def playable_info(
 
     subtitles = []
     for index, track in enumerate(playable.get('subtitles') or [], start=1):
-        proxy.remember_url(track.get('url'))
+        if not track.get('url'):
+            # A track without a file is useless to the player and would
+            # register a "None" proxy URL — skip it.
+            continue
+        proxy.remember_url(track['url'])
         subtitles.append({
             'lang': track.get('lang'),
-            # Same style as the KinoPub HLS manifest track names ("RUS #01")
-            'label': f"{track.get('lang', '').upper()} #{index:02d}",
-            'url': proxy.make_subtitle_url(track.get('url')),
+            # Same style as the KinoPub HLS manifest track names ("RUS #01");
+            # a missing lang must not blow up the label formatting.
+            'label': f"{(track.get('lang') or '').upper()} #{index:02d}".strip(),
+            'url': proxy.make_subtitle_url(track['url']),
         })
 
     result = {

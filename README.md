@@ -144,7 +144,7 @@ no further logins.
 
 ```bash
 ./kptv.sh status     # containers, health, uptime, public URL
-./kptv.sh backup     # consistent DB backup into ./backups/ (safe on a live server)
+./kptv.sh backup     # consistent DB backup into ./backups/ (safe on a live server; keeps the 10 newest)
 ./kptv.sh restart    # recreate the containers, re-reading .env and conf/
 ./kptv.sh stop       # stop everything (all data is kept)
 ```
@@ -158,8 +158,8 @@ no further logins.
 
 ```bash
 ./kptv.sh admin list          # table of registered devices
-./kptv.sh admin delete ID     # delete a device (its TV must re-activate)
-./kptv.sh admin reset ID      # reset a device's settings to defaults
+./kptv.sh admin delete ID     # delete a device (its TV must re-activate; restart the stack afterwards)
+./kptv.sh admin reset ID      # reset a device's settings to defaults (restart the stack afterwards)
 ./kptv.sh admin export FILE   # dump the device DB to FILE (contains tokens — a secret)
 ./kptv.sh admin import FILE   # replace the device DB with FILE (restarts the stack)
 ```

@@ -136,6 +136,10 @@ source.close()
     fi
 
     echo "Backup saved: backups/$file"
+
+    # Rotate: keep the 10 newest backups, drop the rest — the DB is small,
+    # but unbounded backups pile up on a small VPS disk.
+    ls -1t backups/kp-sqlite-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f
 }
 
 cmd_status() {

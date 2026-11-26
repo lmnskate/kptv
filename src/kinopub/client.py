@@ -112,7 +112,10 @@ class KinoPub:
                     return None
         except asyncio.TimeoutError:
             logger.warning('Timeout while requesting %s', url)
-            if attempts < 1:
+            # Only GETs are retried: a lost response to a toggle-style POST
+            # means the first request may have landed already, and a retry
+            # would flip the state twice while the UI reports success.
+            if attempts < 1 and method == 'GET':
                 return await self.api(
                     path,
                     params=params,
@@ -124,7 +127,7 @@ class KinoPub:
             return None
         except aiohttp.ClientError as e:
             logger.warning('HTTP client error while requesting %s: %s', url, e)
-            if attempts < 1:
+            if attempts < 1 and method == 'GET':
                 return await self.api(
                     path,
                     params=params,

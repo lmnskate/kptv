@@ -7,6 +7,7 @@ import viewmodels as vm
 from devices import storage
 from routers.browse import invalidate_home_cache
 from routers.deps import error, registered
+from routers.library import _drop_local_history_cache
 
 router = APIRouter(
     prefix='/api/v1',
@@ -19,6 +20,9 @@ class ProgressReport(BaseModel):
     time: int
     season: Optional[int] = None
     episode: Optional[int] = None
+    # Lets the local history compute a real progress % (and drop finished
+    # titles from the «continue» rail) instead of storing duration 0.
+    duration: Optional[int] = None
 
 
 # Last supportHevc value pushed to KinoPub per device, so /play does not
@@ -92,6 +96,7 @@ async def play(
     )
     # The local-history «continue» rail on /home changed with this row.
     invalidate_home_cache(current.id)
+    _drop_local_history_cache(current.id)
 
     info = vm.playable_info(item, playable)
     # Per-device resume: the local row knows where THIS device stopped.
@@ -102,6 +107,11 @@ async def play(
         playable.get('number')
     )
     if local_position:
+        duration = playable.get('duration') or 0
+        if duration and vm.progress_pct(duration, local_position) >= 95:
+            # Ran to the credits last time — start over instead of resuming
+            # into the final second (which instantly fires «ended»).
+            local_position = 0
         info['position'] = local_position
 
     return info
@@ -130,9 +140,10 @@ async def progress(
         body.season,
         body.episode,
         body.time,
-        0
+        body.duration or 0
     )
     # The local-history «continue» rail on /home changed with this row.
     invalidate_home_cache(current.id)
+    _drop_local_history_cache(current.id)
 
     return {'ok': True}

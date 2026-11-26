@@ -118,11 +118,20 @@ if op == "delete":
         "DELETE FROM devices WHERE id = ?1",
         [device_id],
     )
+    try:
+        connection.execute(
+            "DELETE FROM device_history WHERE device_id = ?1",
+            [device_id],
+        )
+    except sqlite3.OperationalError:
+        # Older DBs predate the device_history table.
+        pass
     connection.close()
     if cursor.rowcount == 0:
         print("No such device: " + device_id)
         raise SystemExit(1)
     print("Deleted: " + device_id)
+    print("NOTE: the running server caches devices in memory — restart the stack: ./kptv.sh restart")
 elif op == "reset":
     cursor = connection.execute(
         "UPDATE devices SET settings = NULL WHERE id = ?1",
@@ -133,6 +142,7 @@ elif op == "reset":
         print("No such device: " + device_id)
         raise SystemExit(1)
     print("Settings reset: " + device_id)
+    print("NOTE: the running server caches devices in memory — restart the stack: ./kptv.sh restart")
 else:
     connection.close()
     print("Unknown operation: " + op)

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
+from routers.deps import error, registered
 from services import proxy
 
 logger = logging.getLogger(__name__)
@@ -17,13 +18,19 @@ router = APIRouter(
 
 # The proxy is an allowlist proxy: it only fetches domains previously
 # remembered via make_proxy_url()/remember_url() (services/proxy.py). It must
-# not become an open proxy — it is exposed to the internet by design.
+# not become an open proxy — it is exposed to the internet by design, so the
+# endpoints answer registered devices only: the auth middleware lets any id
+# through as a transient device, and without this check the relay would serve
+# the whole internet for every remembered domain.
 
 
 @router.head('/proxy')
 async def proxy_head(
     request: Request
 ):
+    if registered(request) is None:
+        return error(401, 'not_registered', 'Устройство не активировано')
+
     url = request.query_params.get('url')
     if not url:
         return Response(
@@ -65,6 +72,9 @@ async def proxy_head(
 async def proxy_request(
     request: Request
 ):
+    if registered(request) is None:
+        return error(401, 'not_registered', 'Устройство не активировано')
+
     url = request.query_params.get('url')
     if not url:
         return Response(
@@ -116,6 +126,9 @@ async def proxy_request(
 async def subtitle_request(
     request: Request
 ):
+    if registered(request) is None:
+        return error(401, 'not_registered', 'Устройство не активировано')
+
     url = request.query_params.get('url')
     if not url:
         return Response(

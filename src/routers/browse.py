@@ -73,6 +73,11 @@ async def _continue_cards(
                 'number': row['episode'],
             }
         pct = vm.progress_pct(row['duration'], row['position'])
+        if pct >= 95:
+            # Ran to the credits — a finished title is not «continue
+            # watching», and resuming into the last second would instantly
+            # fire «ended» in the player.
+            continue
         if pct:
             card['progress'] = pct
         cards.append(card)
@@ -466,9 +471,10 @@ async def item_detail(
         'cast': item.get('cast'),
         'subscribed': item.get('subscribed') == 1,
         'bookmarks': [
-            f.get('id')
+            # Upstream returns folder objects; accept bare ids too in case
+            # that changes between API versions.
+            f.get('id') if isinstance(f, dict) else f
             for f in in_folders
-            if isinstance(f, dict)
         ],
         'bookmark_folders': [
             {'id': f.get('id'), 'title': f.get('title')}

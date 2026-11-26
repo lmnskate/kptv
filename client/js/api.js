@@ -73,8 +73,9 @@
                 xhr.setRequestHeader('Content-Type', 'application/json');
             }
             /* без таймаута зависший запрос на ТВ-сети никогда не завершится —
-               экран остаётся на «Загрузка…» навсегда */
-            xhr.timeout = 25000;
+               экран остаётся на «Загрузка…» навсегда; тяжёлые эндпойнты
+               (например /home) просят больше через options.timeout */
+            xhr.timeout = options.timeout || 25000;
             xhr.ontimeout = function () {
                 if (isGet && attempt === 0) {
                     resolve(apiAttempt(path, options, 1));

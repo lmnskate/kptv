@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -17,8 +17,10 @@ router = APIRouter(
 class SettingsPatch(BaseModel):
     uhd: Optional[bool] = None
     hdr: Optional[bool] = None
-    hevc: Optional[bool] = None
-    poster_size: Optional[str] = None
+    # HEVC is deliberately NOT patchable by hand: /play aligns the KP-side
+    # supportHevc flag with the browser's real codec support on every
+    # playback, so a manual value would be overwritten anyway.
+    poster_size: Optional[Literal['small', 'big']] = None
 
 
 @router.get('/settings')
@@ -50,7 +52,9 @@ async def settings_update(
 
     changed_kp = []
     for attr in KP_SETTING_KEYS:
-        value = getattr(patch, attr)
+        # hevc stays in KP_SETTING_KEYS for the /play-time sync but is no
+        # longer part of the patch model — getattr must tolerate that.
+        value = getattr(patch, attr, None)
         if value is None:
             continue
         setattr(current.settings, attr, value)

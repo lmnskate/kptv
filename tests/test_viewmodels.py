@@ -268,3 +268,25 @@ class TestPlayableInfo:
         assert info['watched'] is False
         assert info['subtitles'] == []
         assert 'thumbnail' not in info
+
+    def test_subtitle_without_lang_does_not_crash(self, device_settings):
+        playable = {
+            'files': [file_entry('1080p', hls4='u')],
+            'subtitles': [{'lang': None, 'url': 'https://subs.test/x.srt'}],
+        }
+        info = vm.playable_info(kp_item(3), playable)
+        assert info['subtitles'][0]['lang'] is None
+        assert info['subtitles'][0]['label'] == '#01'
+
+    def test_subtitle_without_url_is_skipped(self, device_settings):
+        playable = {
+            'files': [file_entry('1080p', hls4='u')],
+            'subtitles': [
+                {'lang': 'rus'},
+                {'lang': 'eng', 'url': 'https://subs.test/2.srt'},
+            ],
+        }
+        info = vm.playable_info(kp_item(4), playable)
+        assert [s['lang'] for s in info['subtitles']] == ['eng']
+        # the index follows the upstream order, so gaps survive a skip
+        assert info['subtitles'][0]['label'] == 'ENG #02'

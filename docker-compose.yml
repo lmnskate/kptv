@@ -20,6 +20,13 @@ services:
       - ./client:/client:ro
     expose:
       - '8000'
+    # json-file logs grow without bounds otherwise; the app logs little,
+    # but «little × months» still fills a small VPS disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
 
   nginx:
     image: nginx:1.27-alpine
@@ -34,3 +41,8 @@ services:
     depends_on:
       server:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

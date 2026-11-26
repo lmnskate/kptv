@@ -40,21 +40,15 @@ async def bookmark_folders(
         return error(401, 'not_registered', 'Устройство не активировано')
 
     result = await current.kp.api('/bookmarks')
+    if result is None:
+        return error(502, 'upstream', 'KinoPub недоступен')
 
+    # The folder payload carries an exact item `count` (verified live against
+    # a multi-page folder) — no per-folder content fetches needed.
     folders = [
-        {'id': f.get('id'), 'title': f.get('title'), 'count': 0}
-        for f in (result or {}).get('items', [])
+        {'id': f.get('id'), 'title': f.get('title'), 'count': f.get('count', 0)}
+        for f in result.get('items', [])
     ]
-
-    # Upstream's `views` field is a view counter, not the item count —
-    # count the actual folder contents instead (folders are few).
-    async def _count(folder_id):
-        r = await current.kp.api(f'/bookmarks/{folder_id}')
-        return len((r or {}).get('items', []))
-
-    counts = await asyncio.gather(*[_count(f['id']) for f in folders])
-    for f, count in zip(folders, counts):
-        f['count'] = count
 
     return {'folders': folders}
 
@@ -118,8 +112,10 @@ async def bookmark_toggle(
     return {
         'ok': True,
         'bookmarks': [
-            f.get('id')
-            for f in (result or {}).get('folders', [])
+            # Upstream returns folder objects; accept bare ids too in case
+            # that changes between API versions.
+            f.get('id') if isinstance(f, dict) else f
+            for f in result.get('folders', [])
         ]
     }
 

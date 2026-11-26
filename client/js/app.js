@@ -940,6 +940,9 @@ function stopPlayback() {
   }
   var video = playerVideo();
   video.pause();
+  /* сброс src освобождает буфер: без этого <video> держит докачанные
+     мегабайты, а память ТВ ограничена */
+  try { video.removeAttribute('src'); video.load(); } catch (e) {}
   Array.prototype.forEach.call(video.querySelectorAll('track'), function (t) { t.remove(); });
 }
 
@@ -970,7 +973,13 @@ function setBuffering(on) {
 function autoNextStart() {
   var t = state.title;
   var nxt = t && isSerial(t) ? nextEpisodeIndex() : null;
-  if (!nxt) { toast('Просмотр завершён'); return; }
+  if (!nxt) {
+    /* конец фильма или последней серии: чёрный экран с тостом выглядел как
+       зависание — возвращаемся на карточку тайтла */
+    stopPlayback();
+    if (t) openDetail(t.id); else goBack();
+    return;
+  }
   state.autoNext = { s: nxt.s, e: nxt.e, total: 5, left: 5, cur: 0 };
   renderAutoNext();
   /* тик 250 мс, чтобы полоса отсчёта двигалась плавно: CSS-переходы на ТВ
@@ -1630,7 +1639,14 @@ function startPlayback(info) {
 
   clearInterval(state.progressTimer);
   state.progressTimer = null;
-  if (info.content_id) state.progressTimer = setInterval(reportProgress, 10000);
+  if (info.content_id) {
+    /* на паузе прогресс не движется — слать нечего; финальный отчёт шлют
+       обработчики pause/ended */
+    state.progressTimer = setInterval(function () {
+      var v = playerVideo();
+      if (!v.paused && !v.ended) reportProgress();
+    }, 10000);
+  }
   updatePlayerUI();
   updateControlLabels();
 }
@@ -1646,6 +1662,8 @@ function reportProgress() {
       time: Math.floor(video.currentTime),
       season: info.season,
       episode: info.episode,
+      /* бэкенд считает % и убирает досмотренное из «Продолжить просмотр» */
+      duration: Math.floor(video.duration || info.duration || 0),
     },
   }).catch(function () { /* best-effort */ });
 }
@@ -2046,7 +2064,9 @@ function openHome() {
 }
 
 function loadHome() {
-  return api('/home')
+  /* /home собирает ~7 upstream-запросов + обогащение «Продолжить просмотр» —
+     на медленном канале до VPS дефолтных 25 с не хватало */
+  return api('/home', { timeout: 40000 })
     .then(function (home) {
       DB.home = home;
       heroRotation.items = heroCandidates(home);
@@ -2633,18 +2653,22 @@ function runSearch(auto) {
 }
 
 function loadSearchPage(page, auto) {
-  if (searchState.loading) return;
-  searchState.loading = true;
-  api('/search?q=' + encodeURIComponent(searchState.query) + '&page=' + page)
+  /* пока запрос летит, может начаться новый поиск (searchState заменяется):
+     захватываем свой объект, чтобы чужой ответ не затёр свежую выдачу */
+  var st = searchState;
+  if (st.loading) return;
+  st.loading = true;
+  api('/search?q=' + encodeURIComponent(st.query) + '&page=' + page)
     .then(function (res) {
-      searchState.loading = false;
+      if (st !== searchState) return;
+      st.loading = false;
       var items = (res.items || []).map(adaptCard);
       items.forEach(remember);
-      searchState.items = page === 1 ? items : searchState.items.concat(items);
-      searchState.page = page;
-      searchState.hasMore = !!res.has_more;
-      state.searchResults = searchState.items;
-      state.searchQuery = searchState.query;
+      st.items = page === 1 ? items : st.items.concat(items);
+      st.page = page;
+      st.hasMore = !!res.has_more;
+      state.searchResults = st.items;
+      state.searchQuery = st.query;
       renderSearch();
       if (auto) {
         applyFocus(); /* фокус остаётся на клавиатуре */
@@ -2662,7 +2686,8 @@ function loadSearchPage(page, auto) {
       }
     })
     .catch(function (e) {
-      searchState.loading = false;
+      if (st !== searchState) return;
+      st.loading = false;
       if (e && e.code === 'not_registered') { showRegister(); return; }
       if (!auto || page === 1) toast('Ошибка поиска: ' + e.message);
     });
@@ -2735,11 +2760,16 @@ function loadBookmarksPage() {
   if (bmState.page > 0 && !bmState.hasMore) return;
   bmState.loading = true;
   var page = bmState.page + 1;
-  api('/bookmarks/' + state.bookmarkFolder + '?page=' + page)
+  /* пока запрос летит, экран мог переоткрыться (bmState заменяется) или
+     папка сменилась: захватываем оба значения, чужой ответ выбрасываем */
+  var bm = bmState;
+  var folder = state.bookmarkFolder;
+  api('/bookmarks/' + folder + '?page=' + page)
     .then(function (res) {
-      bmState.loading = false;
+      if (bm !== bmState || folder !== state.bookmarkFolder) return;
+      bm.loading = false;
       var grid = $('#bookmarks-content .grid');
-      if (!grid || bmState.folder !== state.bookmarkFolder) return;
+      if (!grid) return;
       Array.prototype.forEach.call(
         grid.querySelectorAll('.skel-card, .card-sub'),
         function (node) { node.remove(); }
@@ -2751,8 +2781,8 @@ function loadBookmarksPage() {
         items.forEach(remember);
         items.forEach(function (t) { grid.appendChild(posterCard(t)); });
       }
-      bmState.page = page;
-      bmState.hasMore = !!res.has_more;
+      bm.page = page;
+      bm.hasMore = !!res.has_more;
       var sub = document.querySelector('#bm-sub');
       if (sub) sub.textContent = '';
       buildBrowseRows('bookmarks');
@@ -2761,7 +2791,8 @@ function loadBookmarksPage() {
       applyFocus();
     })
     .catch(function (e) {
-      bmState.loading = false;
+      if (bm !== bmState || folder !== state.bookmarkFolder) return;
+      bm.loading = false;
       if (e && e.code === 'not_registered') { showRegister(); return; }
       toast('Ошибка: ' + e.message);
     });

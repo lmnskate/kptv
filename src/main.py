@@ -5,8 +5,10 @@ from pathlib import Path
 import uvicorn
 from brotli_asgi import BrotliMiddleware
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -140,6 +142,48 @@ async def execute_guarded(
         )
 
 
+# Framework-level rejections (unknown paths, wrong methods, invalid
+# parameters) must wear the same {"error": {...}} envelope the client
+# handles — FastAPI's default HTML/detail bodies would bypass the client's
+# error parsing and surface as silent failures on TVs.
+@app.exception_handler(StarletteHTTPException)
+async def http_error_envelope(
+    request: Request,
+    exc: StarletteHTTPException
+):
+    codes = {
+        404: 'not_found',
+        405: 'method_not_allowed',
+    }
+    messages = {
+        404: 'Не найдено',
+        405: 'Метод не поддерживается',
+    }
+
+    return cors_json_response(
+        {'error': {
+            'code': codes.get(exc.status_code, 'http_error'),
+            'message': messages.get(exc.status_code, str(exc.detail))
+        }},
+        status=exc.status_code
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_envelope(
+    request: Request,
+    exc: RequestValidationError
+):
+    errors = exc.errors()
+    loc = '.'.join(str(p) for p in errors[0].get('loc', [])) if errors else ''
+    message = 'Некорректные параметры запроса' + (f': {loc}' if loc else '')
+
+    return cors_json_response(
+        {'error': {'code': 'bad_request', 'message': message}},
+        status=422
+    )
+
+
 @app.middleware('http')
 async def cache_client_html(
     request: Request,
@@ -212,9 +256,12 @@ async def device_auth(
     device = request.state.device
     if device is not None:
         proxy_service.current_device_id.set(device.id)
-    if device is not None and device.user_agent is None:
+    if device is not None:
+        # Record the User-Agent on first sight and keep it current: the same
+        # id can move between the TV app and a browser, and the stored UA is
+        # what the KinoPub profile shows for the device.
         ua = request.headers.get('user-agent')
-        if ua is not None:
+        if ua is not None and ua != device.user_agent:
             if transient:
                 device.user_agent = ua
             else:
