@@ -1130,12 +1130,13 @@ html, body {
 /* с видимой панелью управления реплики поднимаются над ней */
 #player-overlay.visible ~ #player-subs { bottom: 220px; }
 #player-subs .cue { margin-top: 6px; }
-/* каждая строка — отдельный блок с обнулённой струтой (font-size/line-height:
-   0): высота блока равна высоте бокса с текстом, поэтому строки лежат ровно
-   вплотную при любых метриках шрифта — на ТВ line-height текста ненадёжен */
-#player-subs .cue-line { font-size: 0; line-height: 0; }
-#player-subs .cue-line > span {
-  display: inline-block;
+/* каждая строка — display: table: shrink-to-fit по ширине текста, а высота
+   бокса строго равна контенту — вокруг табличного бокса нет ни струты, ни
+   базовой линии, поэтому строки стыкуются вплотную на любых движках
+   (блочно-строчная механика на Tizen даёт то зазор, то наложение) */
+#player-subs .cue-line {
+  display: table;
+  margin: 0 auto;
   box-sizing: border-box;
   max-width: 100%;
   padding: 4px 12px;
