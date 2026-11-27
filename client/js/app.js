@@ -934,6 +934,11 @@ function stopPlayback() {
   hidePlayerError();
   clearInterval(state.progressTimer);
   state.progressTimer = null;
+  clearInterval(state.subsTimer);
+  state.subsTimer = null;
+  subsLastKey = null;
+  var subsBox = document.getElementById('player-subs');
+  if (subsBox) { subsBox.innerHTML = ''; subsBox.classList.add('hidden'); }
   if (state.hls) {
     try { state.hls.destroy(); } catch (e) {}
     state.hls = null;
@@ -1165,33 +1170,117 @@ function externalTextTracks() {
   return res;
 }
 
-/* Применить выбор субтитров: встроенные дорожки ведём через API hls.js
-   (прямое присвоение mode он переприменяет сам), внешние — через mode */
+/* Применить выбор субтитров. Дорожки ВСЕГДА держим в hidden/disabled и
+   никогда не отдаём нативному рендеру (showing): старые ТВ (Tizen)
+   игнорируют line-height в ::cue, и промежуток между строками реплики не
+   контролируется. Вместо этого активные cue рисует наш рендерер (subsTick)
+   обычным DOM в #player-subs. Встроенные дорожки продолжаем вести через API
+   hls.js (он сам переприменяет режимы), но с subtitleDisplay = false. */
 function applySubChoice(value) {
   state.subs = value;
   var choice = null;
   subtitleOptions().forEach(function (o) { if (o.label === value) choice = o; });
   var video = playerVideo();
   var ext = externalTextTracks();
-  ext.forEach(function (t) { t.mode = 'hidden'; });
+  /* disabled, а не hidden у невыбранных внешних дорожек — иначе браузер
+     скачивает все файлы субтитров разом */
+  ext.forEach(function (t) { t.mode = 'disabled'; });
   if (state.hls) {
-    if (choice && choice.kind === 'embedded') {
-      state.hls.subtitleDisplay = true;
-      state.hls.subtitleTrack = choice.index;
-    } else {
-      state.hls.subtitleDisplay = false;
-      state.hls.subtitleTrack = -1;
-    }
+    /* cues выбранной встроенной дорожки продолжают грузиться (нам нужен
+       activeCues), но нативный вывод выключен — рисуем сами */
+    state.hls.subtitleTrack = (choice && choice.kind === 'embedded') ? choice.index : -1;
+    state.hls.subtitleDisplay = false;
   } else {
     Array.prototype.forEach.call(video.textTracks, function (t) {
       if (ext.indexOf(t) >= 0) return;
-      t.mode = (choice && choice.kind === 'embedded' && t.label === value) ? 'showing' : 'hidden';
+      if (t.kind !== 'subtitles' && t.kind !== 'captions') return;
+      t.mode = (choice && choice.kind === 'embedded' && t.label === value) ? 'hidden' : 'disabled';
     });
   }
   if (choice && choice.kind === 'external' && ext[choice.index]) {
-    ext[choice.index].mode = 'showing';
+    ext[choice.index].mode = 'hidden';
   }
   saveTrackPref('subs', value);
+  subsTick();
+}
+
+/* Текст cue → безопасный HTML: служебные VTT-теги (голос, класс,
+   karaoke-метки) выкидываем, всё остальное экранируем и возвращаем обратно
+   только простое форматирование */
+function cueHtml(text) {
+  var t = String(text)
+    .replace(/<\d{2}:\d{2}[0-9:.]*>/g, '')
+    .replace(/<\/?(v|lang|c|ruby|rt)(\s[^>]*)?>/gi, '');
+  t = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return t.replace(/&lt;(\/?)(i|b|u)&gt;/gi, '<$1$2>');
+}
+
+/* TextTrack выбранной дорожки субтитров (или null): внешние — по индексу
+   среди <track>-элементов, встроенные — по лейблу среди textTracks видео */
+function currentSubTrack() {
+  var label = state.subs;
+  if (!label || label === 'Выкл') return null;
+  var choice = null;
+  subtitleOptions().forEach(function (o) { if (o.label === label) choice = o; });
+  if (!choice) return null;
+  var ext = externalTextTracks();
+  if (choice.kind === 'external') return ext[choice.index] || null;
+  var found = null;
+  Array.prototype.forEach.call(playerVideo().textTracks, function (t) {
+    if (t.kind !== 'subtitles' && t.kind !== 'captions') return;
+    if (ext.indexOf(t) >= 0) return;
+    if (t.label === label) found = t;
+  });
+  return found;
+}
+
+/* Рендерер субтитров: каждые 100 мс перечитывает activeCues выбранной
+   дорожки (в hidden-режиме они обновляются, но не рисуются) и перерисовывает
+   #player-subs только при смене состава реплик */
+var SUBS_TICK_MS = 100;
+var subsLastKey = null;
+
+function subsTick() {
+  var box = document.getElementById('player-subs');
+  if (!box || state.screen !== 'player') return;
+  var video = playerVideo();
+  /* страховка от двойного вывода: нативный рендер не должен включиться
+     нигде (например, если hls.js переприменил режимы при смене дорожки) */
+  Array.prototype.forEach.call(video.textTracks, function (t) {
+    if (t.mode === 'showing') t.mode = 'hidden';
+  });
+  var track = currentSubTrack();
+  var cues = track ? track.activeCues : null;
+  if (!cues || !cues.length) {
+    if (subsLastKey !== null) {
+      subsLastKey = null;
+      box.innerHTML = '';
+      box.classList.add('hidden');
+    }
+    return;
+  }
+  var key = '';
+  var html = '';
+  var i, j;
+  for (i = 0; i < cues.length; i++) {
+    key += cues[i].startTime + '|' + cues[i].endTime + '|' + cues[i].text + '\n';
+    var parts = [];
+    var lines = cues[i].text.split('\n');
+    for (j = 0; j < lines.length; j++) {
+      var line = cueHtml(lines[j].replace(/\r/g, ''));
+      if (line) parts.push('<span class="cue-line">' + line + '</span>');
+    }
+    if (parts.length) html += '<div class="cue">' + parts.join('<br>') + '</div>';
+  }
+  if (key === subsLastKey) return;
+  subsLastKey = key;
+  if (!html) {
+    box.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
+  box.innerHTML = html;
+  box.classList.remove('hidden');
 }
 
 /* Восстановление сохранённого выбора дорожек: списки аудио и встроенных
@@ -1647,6 +1736,9 @@ function startPlayback(info) {
       if (!v.paused && !v.ended) reportProgress();
     }, 10000);
   }
+  /* свой рендерер субтитров: нативный ::cue на ТВ не слушает line-height */
+  clearInterval(state.subsTimer);
+  state.subsTimer = setInterval(subsTick, SUBS_TICK_MS);
   updatePlayerUI();
   updateControlLabels();
 }
