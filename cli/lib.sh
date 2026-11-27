@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for the kptv.sh subcommand tree. Sourced by the command
-# scripts in this directory, never executed directly.
+# Shared helpers for the kptv.sh subcommand tree — sourced, never executed.
 KPTV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KPTV_ROOT"
 
@@ -19,8 +18,7 @@ check_running() {
     fi
 }
 
-# Directories bind-mounted into containers must exist beforehand and be
-# writable by uid 1000 (the container user).
+# Bind-mounted dirs must exist and be writable by uid 1000 (container user).
 ensure_mount_dirs() {
     for dir in data backups; do
         mkdir -p "$dir"
@@ -34,10 +32,8 @@ ensure_mount_dirs() {
     mkdir -p data/letsencrypt
 }
 
-# Device management, executed by python inside the app container against the
-# live SQLite file. Operation and device id come from sys.argv:
-#   list | delete <id> | reset <id>
-# Single-quoted for the shell, so the Python code must use double quotes only.
+# Runs inside the app container against the live DB. Single-quoted for the
+# shell — the Python code must use double quotes only.
 ADMIN_PY='
 import json
 import sqlite3

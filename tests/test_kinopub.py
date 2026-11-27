@@ -1,16 +1,9 @@
-"""kinopub.client retry policy: a lost GET is retried once, a lost POST
-never — a toggle-style POST may have landed already, and a retry would flip
-the state twice while the UI reports success. Sync tests drive the async
-client via asyncio.run (no pytest-asyncio in this project)."""
-
 import asyncio
 
 from kinopub.client import KinoPub
 
 
 class TimeoutSession:
-    """Every request times out immediately; counts the attempts."""
-
     def __init__(self):
         self.calls = 0
 

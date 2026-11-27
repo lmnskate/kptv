@@ -1,7 +1,3 @@
-"""viewmodels: raw KinoPub dicts -> client payloads. Pure functions — the
-tests pin the documented upstream quirks (stream priority, quality fallback,
-season picking, pagination-friendly card fields)."""
-
 import pytest
 from conftest import kp_item
 
@@ -12,8 +8,6 @@ from services import proxy
 
 @pytest.fixture()
 def prefs(monkeypatch):
-    """Deterministic stream preferences regardless of .env values; a fresh
-    settings object instead of mutating the shared singleton."""
     monkeypatch.setattr(
         vm,
         'kp',
@@ -96,8 +90,6 @@ class TestCard:
         card = vm.card(kp_item(1), device_settings, media={'time': 10, 'duration': 60})
         assert 'subtitle' not in card
         assert 'media' not in card
-        # movies carry no «Сезон · Серия», but the resume percentage
-        # is what fills the «Продолжить просмотр» rail
         assert card['progress'] == 17
 
     def test_unstarted_episode_has_no_progress(self, device_settings):
@@ -247,7 +239,6 @@ class TestPlayableInfo:
         assert info['duration'] == 3000
         assert info['position'] == 600
         assert info['watched'] is False
-        # the stream goes straight to the CDN; only subtitles use the proxy
         assert info['url'] == 'https://cdn.test/v.m3u8'
         assert info['thumbnail'] == 'https://cdn.test/thumb.jpg'
         assert [s['label'] for s in info['subtitles']] == ['RUS #01', 'ENG #02']
@@ -288,5 +279,4 @@ class TestPlayableInfo:
         }
         info = vm.playable_info(kp_item(4), playable)
         assert [s['lang'] for s in info['subtitles']] == ['eng']
-        # the index follows the upstream order, so gaps survive a skip
         assert info['subtitles'][0]['label'] == 'ENG #02'

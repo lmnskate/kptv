@@ -3,7 +3,6 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Project root: src/config/settings.py -> src/config -> src -> root
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 _ENV_FILE_PATH = _PROJECT_ROOT / '.env'
@@ -21,12 +20,10 @@ class ServerSettings(BaseSettings):
     port: int = 1234
     scheme: Literal['http', 'https'] = 'http'
     sqlite_url: str = _DEFAULT_SQLITE_URL
-    # Where uvicorn actually listens (the Docker setup overrides both).
     bind_host: str = '0.0.0.0'
     bind_port: int | None = None
     workers: int = 1
     proxy_headers: bool = False
-    # Swagger UI / OpenAPI on an internet-facing deployment: off by default.
     docs: bool = False
 
     @property

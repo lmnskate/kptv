@@ -1,8 +1,5 @@
 /* KPTV API client: device identity + JSON helpers.
-   The device id is the credential, same as the MSX id param.
-   XHR instead of fetch: MSX web views on old TVs lack fetch.
-   The id comes from the ?id= URL param (MSX substitutes its device id there)
-   and falls back to a locally generated one. */
+   XHR instead of fetch: MSX web views on old TVs lack fetch. */
 
 (function () {
     'use strict';
@@ -28,7 +25,7 @@
     function storageSet(value) {
         try {
             localStorage.setItem(DEVICE_KEY, value);
-        } catch (e) { /* storage unavailable (some TV web views) */ }
+        } catch (e) {}
     }
 
     var deviceId = null;
@@ -38,10 +35,9 @@
         if (match) {
             fromUrl = decodeURIComponent(match[1]);
         }
-    } catch (e) { /* no location.search */ }
+    } catch (e) {}
 
     if (fromUrl && fromUrl !== '{ID}') {
-        // MSX substituted its real device id — adopt it
         deviceId = fromUrl;
         storageSet(deviceId);
     }
@@ -57,14 +53,9 @@
         return apiAttempt(path, options || {}, 0);
     }
 
-    /* GET-запросы повторяем один раз после сетевого сбоя/таймаута: ТВ-сети
-       роняют соединения, и без повтора экран оставался бы на ошибке.
-       HTTP-ответы с кодом ошибки не повторяем — это ответ сервера, а не сбой. */
     function apiAttempt(path, options, attempt) {
         return new Promise(function (resolve, reject) {
             var xhr = new XMLHttpRequest();
-            /* cache-buster: ТВ-вебвью (Tizen/MSX) агрессивно кэширует GET
-               и потом вечно отдаёт протухшие ответы (401/410) из кэша */
             var url = '/api/v1' + path + (path.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
             var isGet = !options.method || options.method === 'GET';
             xhr.open(options.method || 'GET', url, true);
@@ -72,9 +63,6 @@
             if (options.body !== undefined) {
                 xhr.setRequestHeader('Content-Type', 'application/json');
             }
-            /* без таймаута зависший запрос на ТВ-сети никогда не завершится —
-               экран остаётся на «Загрузка…» навсегда; тяжёлые эндпойнты
-               (например /home) просят больше через options.timeout */
             xhr.timeout = options.timeout || 25000;
             xhr.ontimeout = function () {
                 if (isGet && attempt === 0) {

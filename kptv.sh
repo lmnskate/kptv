@@ -42,8 +42,6 @@ check_installed() {
     done < <(compose config --images)
 }
 
-# fail before docker starts: nginx references the certificate by its fixed
-# certbot name "kptv" (conf/nginx.conf) and will not boot without it
 check_certs() {
     if [ ! -f data/letsencrypt/live/kptv/fullchain.pem ] || [ ! -f data/letsencrypt/live/kptv/privkey.pem ]; then
         echo "ERROR: no TLS certificate at ./data/letsencrypt/live/kptv/" >&2
@@ -58,10 +56,7 @@ check_certs() {
     fi
 }
 
-# Directories bind-mounted into containers must exist beforehand and be
-# writable by uid 1000 (the container user). When Docker creates them itself
-# they end up owned by root, and the app then dies at startup with a SQLite
-# "readonly database" error — so fix the ownership right here when we can.
+# Bind-mounted dirs must exist and be writable by uid 1000 (container user).
 ensure_mount_dirs() {
     for dir in data backups; do
         mkdir -p "$dir"
@@ -85,8 +80,6 @@ cmd_install() {
     fi
     ensure_mount_dirs
     compose build
-    # compose build only covers services with a build section — pull the rest
-    # (nginx) so start never has to download anything.
     compose pull --ignore-buildable
     echo
     echo "Installed. Edit .env if you have not yet, then start:  ./kptv.sh start"
@@ -137,8 +130,7 @@ source.close()
 
     echo "Backup saved: backups/$file"
 
-    # Rotate: keep the 10 newest backups, drop the rest — the DB is small,
-    # but unbounded backups pile up on a small VPS disk.
+    # Rotate: keep the 10 newest backups.
     ls -1t backups/kp-sqlite-*.db 2>/dev/null | tail -n +11 | xargs -r rm -f
 }
 
@@ -163,7 +155,6 @@ cmd_status() {
         [ "$state" = "running" ] && up=$((up + 1))
         [ -z "$health" ] && health="-"
         uptime=$(printf '%s' "$status" | sed -e 's/ *(healthy)$//' -e 's/ *(unhealthy)$//' -e 's/ *(health: starting)$//')
-        # show only the public IPv4 mappings; expose-only ports are noise
         ports=$(printf '%s' "$ports" | tr ',' '\n' | grep -oE '0\.0\.0\.0:[0-9]+->[0-9]+/tcp' | tr '\n' ' ' || true)
         ports=${ports% }
         [ -z "$ports" ] && ports="-"

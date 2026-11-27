@@ -1,5 +1,3 @@
-"""Shared router helpers: device access and the unified error format."""
-
 from fastapi import Request
 from starlette.responses import JSONResponse
 

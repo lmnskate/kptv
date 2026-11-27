@@ -15,15 +15,9 @@ logger = logging.getLogger(__name__)
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
-    # Media responses must pass through byte-identical: aiohttp transparently
-    # decompresses gzip/deflate, which would desync the copied Content-Length
-    # header and hang the client mid-stream.
     'Accept-Encoding': 'identity'
 }
 
-# Redirects are followed manually (never by aiohttp) so every hop is
-# re-validated against the domain allowlist — otherwise a remembered CDN
-# domain could bounce the proxy into the server's internal network.
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 3
 
@@ -41,9 +35,6 @@ KNOWN_DOMAINS = set()
 
 SESSION = None
 
-# Set by the auth middleware for the duration of the request; media URLs
-# (posters, HLS manifests, subtitles) are fetched by the browser/player
-# without headers, so the device identity has to travel inside the URL.
 current_device_id: contextvars.ContextVar = contextvars.ContextVar(
     'current_device_id',
     default=None
@@ -255,9 +246,6 @@ def filter_audio_track(
     content,
     audio_name
 ):
-    """Keep only the requested audio rendition (matched by NAME) in a master
-    playlist — server-side audio switching for players without an
-    audioTracks API."""
     lines = []
     for line in content.splitlines():
         if line.startswith('#EXT-X-MEDIA:') and 'TYPE=AUDIO' in line:
@@ -297,7 +285,6 @@ def _cache_playlist(
     cache_key,
     entry
 ):
-    # Evict expired entries so the cache cannot grow unboundedly
     now = time.monotonic()
     if len(_PLAYLIST_CACHE) > 64:
         stale = [
@@ -320,9 +307,6 @@ async def get(
     if client_headers and 'Range' in client_headers:
         request_headers['Range'] = client_headers['Range']
 
-    # The device id joins the key: rewritten playlists embed the requesting
-    # device's id into the segment URLs, so a cross-device cache hit would
-    # serve one device's credentials to another.
     cache_key = (url, audio_name, current_device_id.get())
     if not request_headers:
         cached = _PLAYLIST_CACHE.get(cache_key)
@@ -355,11 +339,6 @@ async def get(
             )
 
         encoded = text_content.encode('utf-8')
-        # The rewritten playlist has a different length than the upstream
-        # body (proxied URLs are longer, audio filtering shorter). Sending
-        # the upstream Content-Length desyncs the response: h11 aborts the
-        # connection when the body exceeds it (clients see a truncated or
-        # empty playlist), and a too-large value hangs the client.
         response_headers['Content-Length'] = str(len(encoded))
         if not request_headers and (audio_name or _is_vod_playlist(text_content)):
             _cache_playlist(cache_key, (

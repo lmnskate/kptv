@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 # Generic context help/dispatch for the kptv.sh subcommand tree (git-style).
-#
-# A context script (e.g. cli/admin) sets CONTEXT and DESCRIPTION, then sources
-# this file. Subcommands are discovered automatically: executable siblings
-# named "<context>-<name>" in this directory, where <name> has no further
-# dash (deeper levels are contexts of their own). Each subcommand file should
-# carry a first-line usage comment:
-#
-#   # usage: <name> [<args>] — one-line description
-#
-# so this help listing and `kptv.sh <context> --help` stay in sync with
-# the actual commands.
+# Subcommands are executable siblings named "<context>-<name>" carrying a
+# first-line "# usage: <name> [<args>] — description" comment (parsed for help).
 set -euo pipefail
 
 CMD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

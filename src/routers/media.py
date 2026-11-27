@@ -16,12 +16,6 @@ router = APIRouter(
     tags=['media']
 )
 
-# The proxy is an allowlist proxy: it only fetches domains previously
-# remembered via make_proxy_url()/remember_url() (services/proxy.py). It must
-# not become an open proxy — it is exposed to the internet by design, so the
-# endpoints answer registered devices only: the auth middleware lets any id
-# through as a transient device, and without this check the relay would serve
-# the whole internet for every remembered domain.
 
 
 @router.head('/proxy')

@@ -29,16 +29,11 @@ html, body {
   user-select: none;
 }
 
-/* без fade-анимации: на глючных ТВ-вебвью незапустившаяся анимация
-   оставляет экран с opacity:0 — контент есть, но не виден */
-.screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ }
+.screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
 .hidden { display: none !important; }
 
 /* ---------- Фокус ---------- */
 
-/* box-shadow намеренно не входит в transition: его анимация заставляет
-   слабые ТВ-движки перерисовывать тень каждый кадр — отсюда дёрганье.
-   Тень появляется мгновенно, плавно анимируются только transform/цвета */
 .focusable { transition: transform .16s ease-out, background-color .16s ease-out, color .16s ease-out; }
 
 .card.focused {
@@ -156,9 +151,6 @@ html, body {
   padding: 48px 0;
   background: #0c0f15;
   border-right: 1px solid rgba(255,255,255,.06);
-  /* тень короткая и быстро гаснущая: длинная (24px 0 48px) доходила до лент
-     и ложилась поверх сфокусированных карточек (z-index панели выше) —
-     слева на ховере оставалась тёмная полоса */
   box-shadow: 10px 0 16px rgba(0,0,0,.28);
 }
 
@@ -170,14 +162,11 @@ html, body {
 }
 .nav-logo b { color: var(--accent); }
 
-/* вкладки — строго по центру высоты панели (лого остаётся сверху) */
 .nav-list {
   position: absolute; top: 50%; left: 0; right: 0;
   transform: translateY(-50%);
 }
 
-/* пункты меню — вертикальные строки, прижатые к левому краю;
-   активный пункт помечен акцентной полосой слева */
 .nav-item {
   position: relative;
   display: block;
@@ -202,23 +191,20 @@ html, body {
 .nav-item.focused { background: #fff; color: #0b0e13; font-weight: 700; }
 .nav-item.focused::after { display: none; }
 
-/* контент браузерных экранов живёт правее боковой панели;
-   деталь/плеер/регистрация (chrome-hidden) остаются на весь холст */
 #stage:not(.chrome-hidden) .scroll-content { left: 268px; }
 
 /* ---------- Скролл-контейнеры и рельсы ---------- */
 
-#home-scroll, #detail-scroll { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ overflow: hidden; }
+#home-scroll, #detail-scroll { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
 
 .scroll-content {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   transition: transform .22s ease-out;
   padding-bottom: 220px;
 }
 
 .rail { margin: 42px 0 0 72px; }
 .rail h2 { font-size: 28px; font-weight: 700; margin-bottom: 18px; }
-/* первая лента каталога начинается с отступом сверху */
 .rail.rail-first { margin-top: 116px; }
 
 .track {
@@ -274,14 +260,12 @@ html, body {
 .card-sub { margin-top: 4px; font-size: 15px; color: var(--muted); }
 .card-sub b { color: var(--good); font-weight: 700; }
 
-/* прогресс просмотра на постере (история) */
 .poster-progress {
   position: absolute; left: 0; right: 0; bottom: 0; height: 6px;
   background: rgba(255,255,255,.25);
 }
 .poster-progress i { display: block; height: 100%; background: var(--accent); }
 
-/* «Смотреть все» — последняя карточка ленты */
 .all-art {
   align-items: center; justify-content: center;
   background: var(--panel);
@@ -291,8 +275,6 @@ html, body {
 .all-arrow { font-size: 72px; font-weight: 300; color: var(--muted); }
 .card-all.focused .all-art { border-color: #fff; border-style: solid; }
 .card-all.focused .all-arrow { color: #fff; }
-
-/* «Продолжить просмотр» — широкие 16:9 */
 
 .cw-art {
   width: 384px; height: 216px;
@@ -306,7 +288,7 @@ html, body {
 }
 
 .cw-shade {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   background: linear-gradient(0deg, rgba(0,0,0,.6), rgba(0,0,0,0) 55%);
 }
 
@@ -330,8 +312,6 @@ html, body {
 }
 .card.focused .cw-play, .card:hover .cw-play { opacity: 1; }
 
-/* Подборки — широкие карточки */
-
 .col-art {
   width: 460px; height: 250px;
   border-radius: 16px;
@@ -343,15 +323,11 @@ html, body {
   background-position: center;
 }
 .col-shade {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   background: linear-gradient(0deg, rgba(0,0,0,.65), rgba(0,0,0,.1));
 }
 .col-name { position: relative; font-size: 30px; font-weight: 800; line-height: 1.15; text-shadow: 0 2px 14px rgba(0,0,0,.6); }
 
-/* Жанры — компактные карточки-чипы */
-
-/* padding/margin базовой .card убраны намеренно: рамка фокуса должна
-   облегать сам чип, а не висеть в воздухе на 12px выше/шиже содержимого */
 .genre-card { padding: 0; margin: 0; align-self: flex-start; }
 .genre-card.focused { border-radius: 16px; }
 
@@ -372,7 +348,6 @@ html, body {
 }
 .grid .genre-art { width: 276px; height: 96px; font-size: 24px; }
 
-/* «Смотреть все» в ленте жанров — тот же чип, пунктирная рамка */
 .all-genre-art {
   background: rgba(255,255,255,.04);
   border: 2px dashed rgba(255,255,255,.28);
@@ -388,10 +363,10 @@ html, body {
 
 .hero { position: relative; height: 660px; overflow: hidden; }
 
-.hero-bg { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ background-size: cover; background-position: center; }
+.hero-bg { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-size: cover; background-position: center; }
 
 .hero-fade {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   background:
     linear-gradient(90deg, rgba(11,14,19,.92) 0%, rgba(11,14,19,.55) 45%, rgba(11,14,19,0) 75%),
     linear-gradient(0deg, var(--bg) 0%, rgba(11,14,19,0) 35%);
@@ -446,16 +421,14 @@ html, body {
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.primary.focused { background: var(--accent); color: #fff; box-shadow: 0 0 0 3px #fff, 0 8px 24px rgba(0,0,0,.45); }
 .btn.on { background: rgba(62,224,111,.18); color: var(--good); }
-/* тот же конфликт, что у табов: .btn.on ниже в файле перебивал .btn.focused */
 .btn.on.focused { background: #fff; color: #0b0e13; }
-/* подпись «Сезон · Серия» внутри кнопки «Продолжить просмотр» */
 .btn .b-ep { margin-left: 12px; font-size: 15px; font-weight: 400; opacity: .8; }
 
 /* ---------- Детальная страница ---------- */
 
-.detail-backdrop { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ background-size: cover; background-position: center; }
+.detail-backdrop { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-size: cover; background-position: center; }
 .detail-fade {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   background:
     linear-gradient(90deg, rgba(11,14,19,.95) 0%, rgba(11,14,19,.75) 55%, rgba(11,14,19,.35) 100%),
     linear-gradient(0deg, var(--bg) 8%, rgba(11,14,19,.2) 60%);
@@ -500,11 +473,7 @@ html, body {
 }
 
 .d-seasons { margin: 44px 72px 0; }
-/* position: relative — чтобы offsetLeft табов считался относительно строки
-   (как у .track) и горизонтальный скролл фокуса работал одинаково;
-   transform сдвигает строку при фокусе за правый край */
 .tabs { display: flex; gap: 12px; margin-bottom: 6px; position: relative; transition: transform .22s ease-out; }
-/* страничные табы (закладки) — в линию с заголовком */
 .scroll-content > .tabs { margin: 0 0 26px 72px; }
 
 .tab {
@@ -517,8 +486,6 @@ html, body {
   cursor: pointer;
 }
 .tab.active { background: rgba(255,255,255,.16); color: #fff; }
-/* фокус важнее активного состояния — иначе фокус на активной вкладке
-   (первая, куда попадает ↓ на детальной странице) невидим */
 .tab.active.focused { background: #fff; color: #0b0e13; }
 .tab-count {
   margin-left: 10px;
@@ -529,10 +496,7 @@ html, body {
   padding: 2px 9px;
 }
 .tab.active .tab-count { color: rgba(255,255,255,.8); }
-/* на белом фокусе счётчик иначе сливается с фоном */
 .tab.focused .tab-count { color: rgba(11,14,19,.6); background: rgba(11,14,19,.08); }
-
-/* Пустые состояния */
 
 .empty-state {
   margin: 120px 72px 0;
@@ -541,8 +505,6 @@ html, body {
 .es-icon { font-size: 72px; margin-bottom: 20px; opacity: .8; }
 .es-title { font-size: 30px; font-weight: 800; margin-bottom: 12px; }
 .es-sub { font-size: 19px; color: var(--muted); }
-
-/* Карточка серии */
 
 .ep-art {
   width: 320px; height: 180px;
@@ -573,7 +535,7 @@ html, body {
 
 #screen-player { background: #000; }
 
-#player-video { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ }
+#player-video { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
 #player-video video { width: 100%; height: 100%; }
 
 #player-paused {
@@ -588,7 +550,7 @@ html, body {
 }
 
 #player-overlay {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ z-index: 10;
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 10;
   display: flex; flex-direction: column; justify-content: space-between;
   opacity: 0; transition: opacity .3s ease;
   pointer-events: none;
@@ -612,8 +574,6 @@ html, body {
   position: relative;
   height: 6px; border-radius: 4px;
   background: rgba(255,255,255,.25);
-  /* overflow:hidden срезал бы «бегунок» фокуса по краям шкалы — радиусы
-     у track и fill одинаковые, подрезка не нужна */
 }
 #pp-fill { position: relative; height: 100%; width: 0; background: var(--accent); border-radius: 4px; }
 
@@ -630,11 +590,6 @@ html, body {
   position: relative;
 }
 
-/* транспорт — ровно по центру всей строки (не по остатку после правой
-   группы): абсолютное центрирование, чтобы пауза/перемотка были на оси
-   экрана; и по вертикали — иначе pills prev/next сидят ниже правой группы.
-   Правая группа в потоке — справа, наложений нет: вместе группы
-   занимают меньше половины ширины */
 .pbtn-transport {
   position: absolute; top: 50%; left: 0; right: 0;
   transform: translateY(-50%);
@@ -645,8 +600,6 @@ html, body {
   flex: none;
   display: flex; align-items: center; gap: 14px;
 }
-/* правая группа — компактные круглые кнопки без подписей: текущее значение
-   видно в попапе и тосте при переключении */
 .pbtn-side .pbtn {
   width: 64px; height: 64px;
   padding: 0; justify-content: center;
@@ -669,8 +622,6 @@ html, body {
 .pbtn svg { width: 26px; height: 26px; fill: currentColor; flex: none; }
 .pbtn.dim { opacity: .35; }
 
-/* play/pause — главная круглая кнопка: в покое без цветовой подсветки,
-   иначе белая подложка читалась как застрявший ховер поверх реального фокуса */
 .pbtn-play {
   width: 92px; height: 92px;
   padding: 0; justify-content: center;
@@ -684,10 +635,7 @@ html, body {
   box-shadow: 0 10px 34px rgba(0,0,0,.55);
 }
 .pbtn-play.focused { transform: scale(1.14); }
-/* приглушённая кнопка в фокусе остаётся приглушённой — действия нет */
 .pbtn.dim.focused { opacity: .65; }
-
-/* Попап выбора (аудио / субтитры / качество) */
 
 #player-popup {
   position: absolute; right: 72px; bottom: 190px; z-index: 30;
@@ -710,7 +658,6 @@ html, body {
   flex: none;
 }
 
-/* длинные списки (много дорожек) прокручиваются внутри попапа */
 .popup-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -727,8 +674,6 @@ html, body {
 .popup-item.cur { background: rgba(255,255,255,.14); }
 .popup-item.sel { color: var(--accent); font-weight: 700; }
 
-/* заголовок языковой группы в попапе дорожек; sticky держит его видимым
-   при прокрутке длинного списка (Chromium >= 56; старее — просто уезжает) */
 .popup-head {
   position: sticky; top: 0;
   background: rgba(16,18,24,.97);
@@ -741,7 +686,7 @@ html, body {
 /* ---------- Модал выбора папки закладок ---------- */
 
 #modal {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ z-index: 60;
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 60;
   background: rgba(5,6,9,.72);
   display: flex; align-items: center; justify-content: center;
 }
@@ -788,31 +733,23 @@ html, body {
 
 .chrome-hidden #topnav { display: none; }
 
-.screen-scroll { position: absolute; top: 0; left: 0; right: 0; bottom: 0; /* inset:0 для Chromium < 87 (Tizen) */ overflow: hidden; }
+.screen-scroll { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
 
 /* ---------- Сетки (закладки, история, ТВ, настройки) ---------- */
 
 .grid {
   display: grid;
-  /* 5×276 + 4×32 = 1508px — ровно ширина контента браузерных экранов
-     (1920 − 268 панель − 2×72 отступа): сетка заполняет строку целиком,
-     визуальные отступы слева/справа равные */
   grid-template-columns: repeat(5, 276px);
   gap: 36px 32px;
   padding: 0 72px 240px 72px;
 }
 
-/* width включает padding (box-sizing: border-box), так что контент карточки
-   ровно 276px и постер не вылезает за рамку фокуса */
 .grid .card { width: 288px; }
 .grid .poster-art { width: 276px; height: 414px; }
 .grid .col-art { width: 276px; height: 160px; padding: 18px 20px; border-radius: 14px; }
 .grid .col-name { font-size: 24px; }
 
 .page-head {
-  /* отступ снизу больше обычного: рамка фокуса первого ряда сетки
-     масштабируется (scale 1.07) и поднимается за счёт margin -6px карточки,
-     без запаса она наезжает на заголовок */
   margin: 110px 0 50px 72px;
 }
 .page-head h1 { font-size: 34px; font-weight: 800; }
@@ -841,10 +778,6 @@ html, body {
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* клавиатура — прямоугольник ограниченной ширины (по центру контента),
-   ключи растягиваются по строке: все раскладки (RU/EN/123) заполняют его
-   одинаково и силуэт не прыгает при переключении. Ширина ~1280: на 13
-   клавиш ряда выходит тот же ~88px на ключ, что и у клавиатуры v1.2.0 */
 .kb { margin: 30px auto 0; max-width: 1280px; display: flex; flex-direction: column; gap: 12px; }
 .kb-row { display: flex; gap: 12px; }
 .kb .kb-row > .kb-key { flex: 1 1 0; }
@@ -868,14 +801,11 @@ html, body {
 .kb .kb-key[data-kb="layout"] { font-weight: 800; letter-spacing: 1px; flex: 1 1 0; }
 .kb .kb-key[data-kb="space"] { flex: 3 1 0; }
 .kb .kb-key[data-kb="clear"] { flex: 1.8 1 0; }
-/* «Найти» — обычный тёмный ключ, оранжевым становится только в фокусе:
-   постоянный акцентный фон читался на ТВ как второй фокусный элемент */
 .kb .kb-key[data-kb="go"] { flex: 1.5 1 0; font-weight: 700; }
 .kb-key[data-kb="go"].focused { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* ---------- Настройки ---------- */
 
-/* карточка профиля */
 .set-profile {
   display: flex; align-items: center; gap: 22px;
   margin: 0 72px 28px;
@@ -905,8 +835,6 @@ html, body {
 .set-sub.bad { background: rgba(232,197,71,.14); color: var(--mid); }
 
 .set-rows { margin: 0 72px; }
-/* настроек мало, места много — строки крупнее и выше, чем на остальных
-   экранах; заголовок страницы тоже только здесь */
 #settings-content .page-head { margin: 56px 0 28px 72px; }
 #settings-content .page-head h1 { font-size: 34px; }
 .set-row {
@@ -943,8 +871,6 @@ html, body {
 .set-row.focused .set-switch { background: rgba(255,255,255,.32); }
 .set-row.on.focused .set-switch { background: var(--good); }
 
-/* строки-действия (перезагрузка, очистка истории): отдельный блок снизу,
-   справа иконка вместо переключателя */
 .set-rows.set-acts { margin-top: 24px; }
 .set-rows.set-acts .set-row { border-radius: 18px; border-bottom: none; }
 .set-rows.set-acts .set-row + .set-row { border-radius: 0 0 18px 18px; border-top: 1px solid rgba(255,255,255,.07); }
@@ -954,15 +880,10 @@ html, body {
 
 /* ---------- Фолбэки для старых ТВ-движков ---------- */
 
-/* gap во flex не поддерживается в Chromium < 84 (Tizen 5.5 = Chromium 69):
-   заменяем отступами у соседних детей. gap обнуляем, чтобы в новых
-   браузерах отступы не удвоились. Grid gap не трогаем — он работает */
 #topnav, .track, .all-genre-art, .meta, .hero-btns, .detail-main, .d-btns,
 .tabs, #player-controls, .pbtn-transport, .pbtn-side, .pbtn, .modal-item,
 .query-bar, .kb, .kb-row, .set-profile { gap: 0; }
 #topnav > * + *:not(.nav-list) { margin-top: 6px; }
-/* 26px + собственный margin-right:-6px у карточки = те же визуальные 20px,
-   что давали gap:32px с двумя отрицательными маргинами */
 .track > * + * { margin-left: 26px; }
 .meta > * + * { margin-left: 18px; }
 .hero-btns > * + * { margin-left: 16px; }
@@ -973,23 +894,16 @@ html, body {
 .pbtn-transport > * + * { margin-left: 14px; }
 .pbtn-side > * + * { margin-left: 14px; }
 .pbtn > * + *:not(.hidden) { margin-left: 12px; }
-/* в круглой кнопке play иконка всегда строго по центру */
 .pbtn.pbtn-play > * + * { margin-left: 0; }
 .modal-item > * + * { margin-left: 14px; }
 .query-bar > * + * { margin-left: 14px; }
 .kb > * + * { margin-top: 12px; }
 .kb-row > * + * { margin-left: 12px; }
 .set-profile > * + * { margin-left: 30px; }
-/* в чипе «Смотреть все» после стрелки — текстовый узел, margin не повесить */
 .all-genre-art .all-chip-arrow { margin-right: 10px; }
 
-/* Tizen/webOS: слабый GPU — переходы делаем мгновенными, иначе анимация
-   трансформаций полноэкранных слоёв с тяжёлыми фонами вешает ввод */
 .tv *, .tv *::before, .tv *::after { transition: none !important; }
 
-/* Полоса прогресса плеера в фокусе (перемотка стрелками ← →). Грань должна
-   считываться с дивана: шкала толще обычного, с обводкой и белым «бегунком»
-   на текущей позиции — иначе перемотку не отличить от фокуса по кнопкам */
 .player-progress { padding: 10px 0; }
 #pp-track { cursor: pointer; }
 #pp-fill::after {
@@ -1028,8 +942,6 @@ html, body {
 
 /* ---------- Автопереход к следующей серии ---------- */
 
-/* компактная плашка у нижней кромки: текст слева, отсчёт и кнопки справа,
-   по нижнему краю — тонкая полоса оставшегося времени */
 #player-autonext {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 30;
   display: flex; align-items: center; justify-content: space-between;
@@ -1062,14 +974,11 @@ html, body {
   border-radius: 14px;
 }
 @keyframes skel { from { background-position: 110% 0; } to { background-position: -110% 0; } }
-/* на ТВ статичная подложка — слабый GPU не должен гонять градиенты */
 .tv .skel { animation: none; }
 .skel-hero { height: 660px; border-radius: 0; }
 .skel-line { width: 260px; height: 30px; margin-bottom: 18px; }
 .skel-card { width: 220px; height: 320px; flex: none; }
-/* те же заглушки внутри сеток — размер карточки сетки */
 .grid .skel-card { width: 276px; height: 414px; }
-/* заглушка подборки — широкая карточка */
 .skel-col { width: 460px; height: 250px; flex: none; }
 .grid .skel-col { width: 276px; height: 160px; }
 
@@ -1112,28 +1021,17 @@ html, body {
 }
 #player-error .pe-title { font-size: 30px; font-weight: 800; }
 #player-error .pe-sub { margin: 12px 0 26px; font-size: 19px; color: var(--muted); }
-/* единственное действие на экране — подсвечено всегда, без фокус-механики */
 #player-error .btn { box-shadow: 0 0 0 3px #fff, 0 8px 24px rgba(0,0,0,.45); }
 
 /* ---------- Субтитры ---------- */
 
-/* Дорожки всегда в hidden, реплики рисует свой рендерер (app.js, subsTick)
-   в #player-subs: ::cue на старых ТВ (Tizen) игнорирует line-height, и
-   промежуток между строками иначе не контролируется. Правило ::cue —
-   запасной вариант на случай экзотических движков с принудительным
-   нативным выводом */
 #player-subs {
   position: absolute; left: 90px; right: 90px; bottom: 56px; z-index: 8;
   text-align: center;
   pointer-events: none;
 }
-/* с видимой панелью управления реплики поднимаются над ней */
 #player-overlay.visible ~ #player-subs { bottom: 220px; }
 #player-subs .cue { margin-top: 6px; }
-/* каждая строка — display: table: shrink-to-fit по ширине текста, а высота
-   бокса строго равна контенту — вокруг табличного бокса нет ни струты, ни
-   базовой линии, поэтому строки стыкуются вплотную на любых движках
-   (блочно-строчная механика на Tizen даёт то зазор, то наложение) */
 #player-subs .cue-line {
   display: table;
   margin: 0 auto;
@@ -1145,9 +1043,6 @@ html, body {
   color: #fff;
   text-shadow: 0 2px 6px rgba(0,0,0,.9);
 }
-/* скругляем только внешние углы колонки строк: у первой — верхние, у
-   последней — нижние; скругления на стыке боксов разной ширины давали
-   корявые выемки у более узкого бокса */
 #player-subs .cue-line:first-child {
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;

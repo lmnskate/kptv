@@ -2,7 +2,6 @@ from devices import storage
 from devices.settings import DeviceSettings
 from kinopub.client import KinoPub
 
-# KinoPub device-setting keys by our settings attribute (synced upstream)
 KP_SETTING_KEYS = {
     'uhd': 'support4k',
     'hdr': 'supportHdr',
@@ -11,14 +10,6 @@ KP_SETTING_KEYS = {
 
 
 class Device:
-    """A client device (TV/browser): identity, OAuth tokens, settings and a
-    KinoPub API client. Backed by the `devices` SQLite table.
-
-    Instances are cached by id: every HTTP request used to build a fresh
-    Device (and a fresh aiohttp session), paying a TLS handshake per API
-    call. The cache keeps the session for reuse; the mutators below update
-    the instance in place so the cached copy never goes stale."""
-
     _cache: dict = {}
 
     def __init__(
@@ -138,8 +129,6 @@ class Device:
         self,
         attrs
     ):
-        """Best-effort push of the given settings attrs to the KinoPub device
-        settings; the local value is the source of truth even if it fails."""
         device_info = await self.kp.api('/device/info')
         if device_info is None:
             return

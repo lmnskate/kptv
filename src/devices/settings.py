@@ -1,6 +1,4 @@
 class DeviceSettings:
-    """Per-device playback/view preferences (persisted in the devices row)."""
-
     def __init__(
         self,
         data

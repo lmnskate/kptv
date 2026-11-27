@@ -1,7 +1,3 @@
-"""services/proxy: allowlist enforcement, playlist rewriting, subtitle
-conversion and the redirect-following SSRF guard — all without network via a
-fake aiohttp session."""
-
 import asyncio
 from urllib.parse import quote
 
@@ -35,10 +31,8 @@ class FakeResponse:
 
 
 class FakeSession:
-    """Implements the slice of aiohttp.ClientSession the proxy uses."""
-
     def __init__(self, handler):
-        self.handler = handler  # (method, url, headers) -> FakeResponse
+        self.handler = handler
         self.requests = []
 
     @property
@@ -50,8 +44,6 @@ class FakeSession:
         return self.handler(method, url, headers or {})
 
     def get(self, url, allow_redirects=False):
-        # aiohttp returns an async context manager here, not a coroutine —
-        # get_subtitle does `async with session.get(...)`
         self.requests.append({'method': 'GET', 'url': url, 'headers': {}})
         return self.handler('GET', url, {})
 
@@ -134,7 +126,6 @@ class TestRewriteDomain:
         assert proxied('https://cdn.other.test/path/master.m3u8') in out
         assert proxied('https://cdn.kino.test/hls/relative/seg2.ts') in out
         assert proxied('https://cdn.kino.test/root/seg3.ts') in out
-        # nothing is left bare
         assert 'cdn.other.test/path/master.m3u8\n' not in out
 
     def test_audio_uri_attribute_rewritten(self):
@@ -259,15 +250,10 @@ class TestGetPlaylist:
         status, content_type, response_headers, content = asyncio.run(proxy.get(url))
         assert status == 200
         assert 'mpegurl' in content_type
-        # The header must describe the REWRITTEN body, not the upstream one:
-        # a stale upstream Content-Length severs the connection mid-response
-        # or truncates the playlist for the client.
         assert response_headers['Content-Length'] == str(len(content))
         assert proxied('https://cdn.kino.test/vod/seg1.ts').encode() in content
-        # nothing left as a bare relative line
         assert b'\nseg1.ts\n' not in content
 
-        # VOD playlists are cached: the second call must not hit the network
         asyncio.run(proxy.get(url))
         assert calls == [url]
 
@@ -321,7 +307,6 @@ class TestGetPlaylist:
             asyncio.run(proxy.get(url))
         finally:
             proxy.current_device_id.reset(token)
-        # different device id in the segment URLs -> separate cache entries
         assert len(calls) == 2
 
 

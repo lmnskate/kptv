@@ -1,12 +1,3 @@
-"""Shared pytest fixtures.
-
-Import-time safety: importing any src module triggers config.settings (reads
-.env) and devices.storage (runs migrations + GC + write probe against
-SERVER_SQLITE_URL). Environment variables beat the .env file in
-pydantic-settings, so point the SQLite path at a scratch temp file BEFORE any
-src import — the real data/kp-sqlite.db must never be touched by tests.
-"""
-
 import os
 import sqlite3
 import sys
@@ -15,7 +6,6 @@ from pathlib import Path
 
 _scratch_db = tempfile.mkstemp(prefix='kptv-tests-', suffix='.db')[1]
 os.environ['SERVER_SQLITE_URL'] = _scratch_db
-# Bare checkouts may not have .env — these are only fallbacks for missing vars.
 os.environ.setdefault('SERVER_HOST', 'kptv.tests')
 os.environ.setdefault('KP_CLIENT_ID', 'tests-client-id')
 os.environ.setdefault('KP_CLIENT_SECRET', 'tests-client-secret')
@@ -52,9 +42,6 @@ def apply_migrations(conn):
 
 @pytest.fixture(autouse=True)
 def fresh_db(monkeypatch):
-    """Every test runs against an empty, fully migrated in-memory SQLite;
-    the module-level connection (scratch file) is swapped out. Device and
-    proxy caches are per-process globals — clear them so tests stay isolated."""
     conn = sqlite3.connect(':memory:', autocommit=True, check_same_thread=False)
     apply_migrations(conn)
     monkeypatch.setattr(storage, 'connection', conn)
@@ -77,10 +64,6 @@ def client():
 
 
 class FakeKp:
-    """Stand-in for kinopub.client.KinoPub: canned responses per exact path
-    (or a callable receiving params), records every call. Routes that get no
-    response return None — the codebase's «upstream unreachable» value."""
-
     def __init__(self, responses=None):
         self.responses = responses or {}
         self.calls = []
@@ -101,7 +84,6 @@ class FakeKp:
 
     @staticmethod
     def page_out_of_range(result, page):
-        # The real implementation lives on KinoPub — reuse it.
         return KinoPub.page_out_of_range(result, page)
 
 
@@ -129,7 +111,6 @@ def device_settings():
 
 
 def kp_item(item_id=1, **overrides):
-    """A minimal KinoPub item dict shaped like the live API answers."""
     item = {
         'id': item_id,
         'type': 'movie',

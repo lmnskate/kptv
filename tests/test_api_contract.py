@@ -1,8 +1,3 @@
-"""HTTP contract of /api/v1: auth device identification, error envelope,
-registration flow, settings round-trip, pagination clamping, per-device
-history and upstream-failure statuses. KinoPub is stubbed per device via
-FakeKp; no network is touched."""
-
 import time
 
 import pytest
@@ -39,8 +34,6 @@ class TestDeviceIdentification:
         assert error_code(response) == 'not_registered'
 
     def test_api_responses_never_cached(self, client):
-        # a request that reaches a router — middleware rejections (no_device)
-        # bypass the cache header by design
         response = client.get('/api/v1/auth/qr.svg?code=ABC123')
         assert response.headers['cache-control'] == 'no-store'
 
@@ -122,8 +115,6 @@ class TestRegistration:
         async def fake_check(code):
             return {'access_token': 'AT', 'refresh_token': 'RT'}
 
-        # update_tokens swaps in a real KinoPub instance whose notify() call
-        # must not hit the network — neuter the class method for this test.
         async def fake_api(self, path, params=None, method='GET', **kwargs):
             return None
 
@@ -207,7 +198,6 @@ class TestPlay:
         assert response.status_code == 200
         body = response.json()
         assert body['url'] == 'https://cdn.kino.test/v.m3u8'
-        # subtitles still flow through the converting proxy
         assert body['subtitles'] == [] or all(
             '/api/v1/subtitle?url=' in s['url'] for s in body['subtitles']
         )
@@ -318,7 +308,6 @@ class TestSearch:
         response = client.get('/api/v1/search?q=мстители', headers=DEVICE_HEADER)
         assert response.status_code == 200
         ids = [i['id'] for i in response.json()['items']]
-        # exact title first, then prefix matches by views, substring last
         assert ids == [2, 4, 1, 3]
 
     def test_original_title_half_matches(self, client, registered_device):
@@ -341,7 +330,6 @@ class TestSearch:
         page2 = client.get('/api/v1/search?q=фильм&page=2', headers=DEVICE_HEADER).json()
         assert [i['id'] for i in page2['items']] == [5, 4, 3, 2, 1]
         assert page2['has_more'] is False
-        # the second client page is served from the cached pool
         assert len(registered_device.kp.calls) == 1
 
     def test_fetches_upstream_pages_up_to_cap(self, client, registered_device):
@@ -357,7 +345,6 @@ class TestSearch:
 
         registered_device.kp.responses['/items/search'] = search_page
         body = client.get('/api/v1/search?q=фильм', headers=DEVICE_HEADER).json()
-        # 100-item pool cap = two upstream pages of 50; ranked by views desc
         assert len(registered_device.kp.calls) == 2
         assert body['items'][0]['id'] == 100
         assert body['has_more'] is True
@@ -393,13 +380,11 @@ class TestHome:
         assert response.status_code == 200
         rails = {r['id']: r for r in response.json()['rails']}
         continue_items = rails['continue']['items']
-        # newest local row first: the movie (200) was recorded after the serial
         assert [i['id'] for i in continue_items] == [200, 100]
         assert continue_items[0]['progress'] == 25
         assert 'media' not in continue_items[0]
         assert continue_items[1]['media'] == {'season': 1, 'number': 2}
         assert continue_items[1]['progress'] == 50
-        # the «смотрю» rail is untouched
         assert [i['id'] for i in rails['watching']['items']] == [60]
 
     def test_continue_rail_ignores_account_wide_watching(self, client, registered_device):
@@ -429,12 +414,10 @@ class TestHome:
         }]
         registered_device.kp.responses['/items/100'] = {'item': item}
 
-        # fill the home cache while the local history is still empty
         response = client.get('/api/v1/home', headers=DEVICE_HEADER)
         assert 'continue' not in {r['id'] for r in response.json()['rails']}
 
         client.get('/api/v1/play/100', headers=DEVICE_HEADER)
-        # the real client always reports the /play-resolved season/episode
         client.post(
             '/api/v1/progress',
             headers=DEVICE_HEADER,
@@ -509,8 +492,6 @@ class TestLibrary:
 
 
 class TestMediaGuards:
-    """The proxy is internet-facing: only registered devices may relay."""
-
     def test_proxy_requires_a_registered_device(self, client, fresh_db):
         response = client.get(
             '/api/v1/proxy?url=https://cdn.kino.test/v.m3u8',
@@ -536,8 +517,6 @@ class TestMediaGuards:
 
 
 class TestErrorEnvelope:
-    """Framework-level rejections wear the same {"error": {...}} envelope."""
-
     def test_unknown_path_is_a_json_404(self, client, registered_device):
         response = client.get('/api/v1/nope', headers=DEVICE_HEADER)
         assert response.status_code == 404
@@ -567,8 +546,6 @@ class TestRegistrationHygiene:
         async def fake_check(code):
             return {'access_token': 'AT', 'refresh_token': 'RT'}
 
-        # update_tokens swaps in a real KinoPub instance whose notify() call
-        # must not hit the network — neuter the class method for this test.
         async def fake_api(self, path, params=None, method='GET', **kwargs):
             return None
 
@@ -598,8 +575,6 @@ class TestSettingsValidation:
         assert error_code(response) == 'bad_request'
 
     def test_hevc_patch_is_ignored(self, client, registered_device):
-        # HEVC is aligned with real browser support by /play on every
-        # playback — a manual patch must not stick.
         response = client.post(
             '/api/v1/settings',
             headers=DEVICE_HEADER,
@@ -621,7 +596,6 @@ class TestBookmarks:
             {'id': 1, 'title': 'Смотреть позже', 'count': 22},
             {'id': 2, 'title': 'Избранное', 'count': 3},
         ]
-        # no per-folder content fetches — the count travels in the payload
         assert [c['path'] for c in registered_device.kp.calls] == ['/bookmarks']
 
     def test_folders_upstream_failure_is_502(self, client, registered_device):
@@ -652,8 +626,6 @@ class TestBookmarks:
 
 
 class TestResumeRules:
-    """Titles that ran to the credits (>=95%) stop being «continue» items."""
-
     def _playable_item(self, item_id):
         item = kp_item(item_id)
         item['videos'] = [{

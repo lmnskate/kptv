@@ -40,8 +40,6 @@ app = FastAPI(
     title='KPTV',
     version=g.APP_VERSION,
     lifespan=lifespan,
-    # The service is internet-facing; Swagger/OpenAPI are opt-in
-    # (SERVER_DOCS=true) so the schema is not public by default.
     docs_url='/docs' if server.docs else None,
     openapi_url='/openapi.json' if server.docs else None,
 )
@@ -69,9 +67,6 @@ app.include_router(settings.router)
 app.include_router(media.router)
 app.include_router(msx.router)
 
-# The SPA lives in the repo-root client/ directory (outside the src/ build
-# context); compose bind-mounts it so the app serves /client/ the same way
-# in production (docker-compose.yml).
 CLIENT_DIR = BASE_DIR.parent / 'client'
 if CLIENT_DIR.is_dir():
     app.mount(
@@ -142,10 +137,6 @@ async def execute_guarded(
         )
 
 
-# Framework-level rejections (unknown paths, wrong methods, invalid
-# parameters) must wear the same {"error": {...}} envelope the client
-# handles — FastAPI's default HTML/detail bodies would bypass the client's
-# error parsing and surface as silent failures on TVs.
 @app.exception_handler(StarletteHTTPException)
 async def http_error_envelope(
     request: Request,
@@ -197,24 +188,12 @@ async def cache_client_html(
 
     path = str(request.url.path)
     if path.startswith('/api/'):
-        # API responses must never be cached: TV webviews (Tizen/MSX)
-        # aggressively cache XHR GETs without validators and then serve
-        # stale 401/410 auth responses forever.
         response.headers['Cache-Control'] = 'no-store'
     elif path in ('/client', '/client/') or path.endswith('.html'):
-        # The SPA HTML must always revalidate: it carries the ?v=
-        # cache-buster for js/css, and a stale HTML would keep the whole
-        # client on the old version.
         response.headers['Cache-Control'] = 'no-cache, must-revalidate'
     elif path.endswith(('/js/app.js', '/js/api.js', '/css/client.css')):
-        # Our own code changes every release; stale TV/browser caches have
-        # bitten us before. hls.min.js (vendored, immutable) keeps the
-        # default heuristic caching.
         response.headers['Cache-Control'] = 'no-cache, must-revalidate'
     elif path.startswith('/msx/'):
-        # MSX start pages and the logo: TV webviews cache them heuristically
-        # for a long time and keep showing stale tiles after edits. The
-        # payloads are tiny, so always revalidate.
         response.headers['Cache-Control'] = 'no-store'
 
     return response
@@ -225,9 +204,6 @@ async def device_auth(
     request: Request,
     call_next
 ):
-    """Identifies the calling device (the credential) and loads it onto
-    request.state. The device id travels in the X-Device-Id header (the web
-    client) or the ?id= query param (MSX compatibility)."""
     if request.method == 'OPTIONS':
         return await call_next(request)
 
@@ -248,8 +224,6 @@ async def device_auth(
             if path in REGISTRATION_PATHS:
                 request.state.device = Device.create(device_id)
             else:
-                # Transient in-memory device: keeps the unregistered flow
-                # working without persisting rows for arbitrary ids.
                 request.state.device = Device({'id': device_id})
                 transient = True
 
@@ -257,9 +231,6 @@ async def device_auth(
     if device is not None:
         proxy_service.current_device_id.set(device.id)
     if device is not None:
-        # Record the User-Agent on first sight and keep it current: the same
-        # id can move between the TV app and a browser, and the stored UA is
-        # what the KinoPub profile shows for the device.
         ua = request.headers.get('user-agent')
         if ua is not None and ua != device.user_agent:
             if transient:
@@ -267,9 +238,6 @@ async def device_auth(
             else:
                 device.update_user_agent(ua)
 
-    # Device instances (and their aiohttp sessions) are cached across
-    # requests for connection reuse — nothing to close here; the lifespan
-    # closes everything at shutdown.
     return await execute_guarded(
         request,
         call_next,
@@ -293,8 +261,6 @@ if __name__ == '__main__':
             'refresh locks assume a single worker — keep SERVER_WORKERS=1',
             server.workers
         )
-    # Device ids travel in media URL query strings; the default uvicorn
-    # access log would write them to disk. nginx logs $uri (no args).
     logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 
     uvicorn.run(

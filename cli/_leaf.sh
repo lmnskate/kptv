@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# Generic leaf-command implementation for the kptv.sh admin command tree.
-#
-# A leaf script (e.g. cli/admin-delete) sets OP — "delete" or "reset" (both
-# require a device id) — and sources this file. The leaf's own help/usage
-# comes from its first-line comment:
-#
-#   # usage: delete <id> — one-line description
+# Generic leaf-command implementation: the leaf sets OP and sources this file;
+# its usage line is the first-line "# usage: ..." comment (parsed for help).
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

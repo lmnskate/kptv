@@ -1,6 +1,3 @@
-"""devices/storage: schema migrations, device CRUD, domain allowlist rows,
-device-history upserts and the import-time GC rules."""
-
 import time
 
 from devices import migrations, storage
@@ -101,7 +98,6 @@ class TestDomains:
 
     def test_add_is_deduped(self, fresh_db):
         storage.add_domain('cdn.test')
-        # INSERT OR IGNORE — an existing row returns nothing
         assert storage.add_domain('cdn.test') is None
 
 
@@ -119,8 +115,6 @@ class TestHistory:
         assert storage.get_device_history('tv-1', 30, 0)[0]['duration'] == 600
 
     def test_episodes_collapse_to_newest(self, fresh_db):
-        """One card per title: a serial's episode rows collapse into the
-        newest viewing event (ties break by insertion order)."""
         storage.record_device_history('tv-1', 100, 1, 1, position=1, duration=100)
         storage.record_device_history('tv-1', 100, 2, 1, position=1, duration=100)
         rows = storage.get_device_history('tv-1', 30, 0)
@@ -209,11 +203,8 @@ class TestCleanup:
 
         storage.cleanup_stale_devices()
 
-        # the cap uses `updated_at <= 1000th newest`, so with distinct
-        # timestamps the boundary row is trimmed too: KEEP-1..KEEP remain
         kept = storage.count_device_history('tv-1')
         assert storage.DEVICE_HISTORY_KEEP - 1 <= kept <= storage.DEVICE_HISTORY_KEEP
-        # newest kept, oldest trimmed
         assert storage.get_device_history('tv-1', 1, 0)[0]['item_id'] == total - 1
         assert storage.get_device_history('tv-1', 1, kept - 1)[0]['item_id'] == total - kept
         assert storage.count_device_history('tv-2') == 1

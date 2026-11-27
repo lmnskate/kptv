@@ -10,13 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class KinoPub:
-    """Async client for the KinoPub API (api.service-kp.com/v1).
-
-    Returns raw response dicts/lists — view shaping lives in viewmodels.py.
-    Transparently refreshes OAuth tokens on 401 (per-device lock, so
-    concurrent requests refresh once). A dead refresh token clears the stored
-    pair so the device falls back to the activation flow."""
-
     _refresh_locks: dict = {}
     _refresh_locks_lock = asyncio.Lock()
 
@@ -58,8 +51,6 @@ class KinoPub:
         attempts=0
     ):
         if not self.token:
-            # Registration needed (or a concurrent request already found the
-            # stored pair dead and cleared it).
             return None
 
         session = await self.get_session()
@@ -112,9 +103,6 @@ class KinoPub:
                     return None
         except asyncio.TimeoutError:
             logger.warning('Timeout while requesting %s', url)
-            # Only GETs are retried: a lost response to a toggle-style POST
-            # means the first request may have landed already, and a retry
-            # would flip the state twice while the UI reports success.
             if attempts < 1 and method == 'GET':
                 return await self.api(
                     path,
@@ -146,14 +134,11 @@ class KinoPub:
         result,
         page
     ):
-        # KinoPub clamps out-of-range pages to the last one instead of
-        # returning an empty list, which would make infinite scroll loop.
         try:
             return page > result['pagination']['current']
         except (KeyError, TypeError):
             return False
 
-    # --- OAuth device-code flow (no instance needed) ---
 
     @staticmethod
     async def get_codes():
@@ -197,9 +182,6 @@ class KinoPub:
                 )
                 result = await response.json()
                 if result.get('error') is not None:
-                    # authorization_pending is the normal polling state;
-                    # anything else (invalid_code, expired_token) is
-                    # terminal — surface it so the UI can restart the flow.
                     if result['error'] == 'authorization_pending':
                         return None
 
@@ -210,7 +192,6 @@ class KinoPub:
             logger.warning('Failed to check device registration status: %s', e)
             return None
 
-    # --- Token refresh with self-healing ---
 
     @classmethod
     async def _get_refresh_lock(
@@ -241,17 +222,10 @@ class KinoPub:
             if device is None:
                 return False
 
-            # A concurrent refresh may have cleared the pair (dead upstream
-            # tokens) while we waited on the lock: afterwards both the stored
-            # and the adopted token are None, the «tokens differ» adoption
-            # below does not trigger, and we would POST refresh_token=None.
             if not self.refresh:
                 return False
 
             if device.token != self.token:
-                # Another request already refreshed the pair — adopt it.
-                # A dead pair comes back as (None, None): refuse the retry
-                # instead of sending "Bearer None".
                 self.token = device.token
                 self.refresh = device.refresh
                 await self.close_session()
@@ -274,11 +248,6 @@ class KinoPub:
                     )
                     result = await response.json()
                     if result.get('error') is not None:
-                        # The stored pair is dead server-side (the device was
-                        # unlinked, the tokens were rotated elsewhere or the
-                        # refresh window expired). Clear it so the device
-                        # falls back to the registration flow instead of
-                        # failing every request with 401.
                         logger.warning(
                             'Refresh for device %s failed (%s) — clearing tokens to force re-registration',
                             self.device_id,

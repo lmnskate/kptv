@@ -15,7 +15,6 @@ if (KPTV_DEBUG) {
   });
 }
 
-/* слабые ТВ-движки: css .tv отключает все переходы/анимации */
 if (/Tizen|webOS|Web0S|NetCast|SMART-TV|Smart-TV|VIDAA/i.test(navigator.userAgent)) {
   document.body.className += (document.body.className ? ' ' : '') + 'tv';
 }
@@ -26,7 +25,6 @@ var api = window.KPTV.api;
 
 /* ------------------------------ Данные ---------------------------------- */
 
-/* Fallback-градиенты для карточек без постера */
 var GRADS = [
   ['#173a6b', '#0e8a8a'], ['#3a1c54', '#8a2b5e'], ['#0f4c5c', '#5f6caf'],
   ['#1a1a40', '#e94560'], ['#532407', '#c96f2e'], ['#101820', '#4e6e58'],
@@ -34,8 +32,6 @@ var GRADS = [
   ['#2c003e', '#907ad6'], ['#14213d', '#fca311'], ['#005f73', '#94d2bd'],
 ];
 
-/* Иконки пустых состояний — инлайн-SVG: эмодзи на старых ТВ-вебвью
-   (Tizen 2.4/4) рисуются «тофу»-квадратами */
 var EMPTY_ICONS = {
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
   bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>',
@@ -56,7 +52,6 @@ var NAV = [
   ['history', 'История'], ['settings', 'Настройки'],
 ];
 
-/* Экраны с общим боковым меню («браузерные») */
 var BROWSE_SCREENS = ['home', 'catalog', 'section', 'collections', 'search', 'bookmarks', 'history', 'settings'];
 var SCREEN_CONTENT = {
   home: 'home-content', catalog: 'catalog-content', section: 'section-content',
@@ -70,7 +65,6 @@ var TYPE_LABELS = {
   docuserial: 'Документальный сериал', concert: 'Концерт', tvshow: 'ТВ-шоу',
 };
 
-/* Свободное место под последним блоком контента (px, в координатах холста) */
 var BOTTOM_GAP = 220;
 
 var ROWS = {
@@ -89,42 +83,42 @@ var FOCUS = {
 var state = {
   screen: 'home',
   prev: 'home',
-  playerPrev: 'home',   // экран, из которого открыли плеер (возврат из плеера)
-  section: 'home',      // активный пункт бокового меню
-  lastNavRow: {},       // экран -> строка контента, с которой ушли в боковое меню
-  lastNavCol: {},       // экран -> колонка контента, с которой ушли в меню
-  title: null,          // объект тайтла (detail)
-  detailStack: [],      // стек карточек detail → detail («Похожие»)
-  season: 0,            // индекс сезона
-  episode: 0,           // индекс серии
+  playerPrev: 'home',
+  section: 'home',
+  lastNavRow: {},
+  lastNavCol: {},
+  title: null,
+  detailStack: [],
+  season: 0,
+  episode: 0,
   playing: false,
   playerError: false,
-  playInfo: null,       // последний ответ /play
+  playInfo: null,
   hls: null,
-  qualityH: null,       // выбранная высота потока (null = Авто)
+  qualityH: null,
   progressTimer: null,
-  playRestart: false,   // «Смотреть» с начала, игнорируя позицию resume
+  playRestart: false,
   subs: 'Выкл',
   popup: null,
   popupIdx: 0,
-  modal: null,          // 'bookmarks' — модал выбора папки закладок
+  modal: null,
   modalIdx: 0,
-  query: '',            // строка поиска
-  kbLang: 'ru',         // раскладка клавиатуры поиска
+  query: '',
+  kbLang: 'ru',
   searchResults: null,
-  sectionUrl: null,     // API-путь текущей сетки «Смотреть все»
-  sectionPage: 0,       // последняя загруженная страница сетки
+  sectionUrl: null,
+  sectionPage: 0,
   sectionHasMore: false,
   sectionLoading: false,
   sectionGrid: null,
-  sectionBack: null,    // {title, url} для возврата из сетки тайтлов жанра в сетку жанров
-  sectionHome: false,   // сетка открыта из бокового меню → Back ведёт на главную
-  cartoonGenre: null,   // id жанра «Мультфильм» (определяется один раз)
+  sectionBack: null,
+  sectionHome: false,
+  cartoonGenre: null,
   bookmarkFolders: [],
-  bookmarkFolder: null, // активная папка
+  bookmarkFolder: null,
   settings: null,
-  catalogType: null,    // тип, чей контент сейчас в #catalog-content
-  autoNext: null,       // {s,e,left,cur,timer} — отсчёт автоперехода к след. серии
+  catalogType: null,
+  autoNext: null,
 };
 
 /* ----------------------------- Хелперы ---------------------------------- */
@@ -146,11 +140,6 @@ function grad(t, a) {
   return 'linear-gradient(' + (a == null ? 160 : a) + 'deg, ' + t.grad[0] + ', ' + t.grad[1] + ')';
 }
 
-/* data-bg/data-grad — ленивая подгрузка постеров: карточка рождается с
-   фолбэк-градиентом, а картинку выставляет hydrateVisible(), когда она
-   приближается к вьюпорту. Все постеры разом (40+ на главной) душат слабые
-   ТВ на сетевых запросах и декодировании. wide-бэкдропы (1–6 МБ) — только
-   hero/«Продолжить просмотр»/фон детальной: t.backdrop || t.poster */
 function artAttrs(url, gradCss) {
   if (!url) return '';
   return ' data-bg="' + esc(url) + '"' + (gradCss ? ' data-grad="' + esc(gradCss) + '"' : '');
@@ -193,7 +182,6 @@ function fmtTime(sec) {
   return (h ? h + ':' : '') + mm + ':' + pad(s);
 }
 
-/* Unix timestamp (KinoPub dates are in seconds) → dd.mm.yyyy */
 function fmtTs(ts) {
   var n = Number(ts);
   if (!isFinite(n) || n <= 0) return '';
@@ -203,7 +191,6 @@ function fmtTs(ts) {
   return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear();
 }
 
-/* Тот же timestamp человеческим языком: «сегодня», «вчера», «N дн. назад» */
 function fmtRel(ts) {
   var n = Number(ts);
   if (!isFinite(n) || n <= 0) return '';
@@ -219,7 +206,6 @@ function fmtRel(ts) {
 }
 
 function kpBadge(t) {
-  /* показываем только IMDb: рейтинг Кинопоиска для пользователя неважен */
   if (t.imdb == null) return '';
   return '<span class="rate imdb">IMDb ' + t.imdb.toFixed(1) + '</span>';
 }
@@ -252,7 +238,7 @@ function adaptCard(c) {
     subtitle: c.subtitle || '',
     media: c.media || null,
     watched: !!c.watched,
-    watchedAt: Number(c.watched_at) || 0,   // last_seen, сортировка истории
+    watchedAt: Number(c.watched_at) || 0,
     newEpisodes: c.new_episodes || null,
     grad: GRADS[Number(c.id) % GRADS.length],
     detail: false,
@@ -277,7 +263,6 @@ async function loadDetail(id) {
   t.cast = d.cast ? d.cast.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
   t.bookmarks = d.bookmarks || [];
   t.folders = d.bookmark_folders || [];
-  /* точка возобновления ЭТОГО устройства (сезон/серия/позиция) с бэкенда */
   t.resume = d.resume || null;
   t.seasons = (d.seasons || []).map(function (s) {
     return {
@@ -321,7 +306,6 @@ function continueCard(t) {
   var g = grad(t, 140);
   var sub = t.subtitle || 'Продолжить просмотр';
   if (t.media && t.media.season != null) {
-    /* как в истории: «Сезон · Серия» точки возобновления */
     sub = 'Сезон ' + t.media.season + ' · Серия ' + t.media.number;
   }
   c.innerHTML =
@@ -348,7 +332,6 @@ function collectionCard(col) {
   return c;
 }
 
-/* Карточка жанра — лента жанров в каталоге и сетка «Все жанры» */
 function genreCard(genre, type) {
   var c = el('div', 'card focusable genre-card');
   c.dataset.kind = 'genre';
@@ -359,9 +342,6 @@ function genreCard(genre, type) {
   return c;
 }
 
-/* Последняя карточка ленты — переход в полную сетку раздела.
-   chip=true — компактный вариант для ленты жанров: чип того же размера,
-   что и жанры (постерный вариант вытягивал всю ленту по высоте) */
 function allCard(title, url, chip) {
   var c = el('div', 'card focusable card-all' + (chip ? ' genre-card' : ''));
   c.dataset.kind = 'all';
@@ -407,14 +387,10 @@ function markNavCurrent() {
   );
 }
 
-/* Строка 0 у браузерных экранов — общее боковое меню */
 function topRow() {
   return Array.prototype.slice.call(document.querySelectorAll('#topnav .focusable'));
 }
 
-/* Большой баннер главной: кандидаты — «Новинки» с широким фоном (до 5).
-   Баннер ротирует их раз в ~10 с, меняя содержимое на месте — фокус и
-   прокрутка экрана не трогаются */
 function heroCandidates(home) {
   var fresh = ((home.rails || []).filter(function (r) { return r.id === 'fresh'; })[0] || {}).items || [];
   var out = [];
@@ -481,7 +457,6 @@ function rotateHero() {
 function startHeroRotation() {
   stopHeroRotation();
   heroRotation.timer = setInterval(function () {
-    /* крутим баннер только на видимой главной */
     if (state.screen === 'home') rotateHero();
   }, 10000);
 }
@@ -506,15 +481,13 @@ function renderHome() {
 
   rails.forEach(function (r) {
     if (r.id === 'continue') {
-      /* карточка с точкой возобновления: прогресс > 0 либо (между сериями)
-         указатель на следующую серию с нулевой позицией */
       var items = r.items.map(adaptCard).filter(function (t) { return t.progressPct > 0 || t.media; });
       items.forEach(remember);
       if (items.length) c.appendChild(rail('Продолжить просмотр', items.map(continueCard)));
     } else {
       var cards = r.items.map(adaptCard);
       cards.forEach(remember);
-      if (!cards.length) return; /* рельса пустая — не рисуем её вовсе */
+      if (!cards.length) return;
       cards = cards.slice(0, HOME_RAIL_LIMIT);
       c.appendChild(rail(r.title, cards.map(posterCard)));
     }
@@ -540,8 +513,6 @@ function buildHomeRows() {
   );
 }
 
-/* Построение строк для экранов-разделов: боковое меню + все фокусные строки
-   контента в DOM-порядке (клавиатура, табы, сетки, рельсы, настройки) */
 function buildBrowseRows(screen) {
   var root = '#' + SCREEN_CONTENT[screen];
   var rows = [topRow()];
@@ -560,7 +531,6 @@ function buildBrowseRows(screen) {
         var cards = Array.prototype.slice.call(block.querySelectorAll('.card'));
         if (cards.length) rows.push(cards);
       } else {
-        /* сетка: группируем карточки в строки по вертикальной позиции */
         var line = [], lineTop = null;
         Array.prototype.forEach.call(block.children, function (card) {
           var top = card.offsetTop;
@@ -577,11 +547,6 @@ function buildBrowseRows(screen) {
   ROWS[screen] = rows;
 }
 
-/* Пересборка строк фокуса после асинхронной отрисовки контента.
-   Работает только на видимом экране: у скрытого (display:none) все offsetTop
-   равны 0, и сетка собралась бы в одну строку. При keepFocus фокус следует
-   за самим элементом (а не за индексом строки): если над ним появились
-   новые строки, фокус остаётся на месте, а не «отбрасывает назад» */
 function rebuildRows(screen, keepFocus) {
   if (state.screen !== screen) return;
   var oldRows = ROWS[screen] || [];
@@ -626,8 +591,6 @@ function epCard(t, e) {
   return c;
 }
 
-/* Точка возобновления считается живой, пока просмотр не завершён: на 100%
-   «продолжать» нечего — дальше работает обычная кнопка «Смотреть» */
 function hasResume(t) {
   return !!(t && t.resume && t.resume.progress > 0 && t.resume.progress < 100);
 }
@@ -641,9 +604,6 @@ function resumeButton(t) {
   return '<button class="btn primary focusable" data-act="resume">' + label + '</button>';
 }
 
-/* Открыть плеер на серии, где остановились: номера сезона/серии из resume
-   (или media карточки «Продолжить просмотр») переводим в индексы загруженной
-   карточки; без них — обычный запуск (фильм сам встанет на позицию) */
 async function playResume(id) {
   var t = byId(id);
   if (!t || !t.detail) {
@@ -663,7 +623,6 @@ async function playResume(id) {
     for (var j = 0; j < eps.length; j++) {
       if (eps[j].n === m.number) return openPlayer(id, i, j);
     }
-    /* серия не нашлась (перенумеровали) — хотя бы нужный сезон */
     return openPlayer(id, i, null);
   }
   return openPlayer(id);
@@ -781,9 +740,6 @@ var PICON = {
   prev: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>',
 };
 
-/* Стандартные классы вместо «сырых» высот манифеста: KP режет ряды под
-   исходник (876p/960p — это кропнутый 1080p), и список «876p, 960p, 1080p»
-   только путал. Ярлык один на класс; выбор класса пинит его старший ряд */
 var QUALITY_CLASSES = [
   [2000, '4K'],
   [1200, '2K'],
@@ -799,8 +755,6 @@ function qualityLabel(h) {
   return 'SD';
 }
 
-/* Уровни hls.js, сгруппированные в классы: [{label, height, level}],
-   от тяжёлых к лёгким; представитель класса — самый высокий его ряд */
 function qualityClasses(levels) {
   var byLabel = {};
   var out = [];
@@ -819,17 +773,11 @@ function qualityClasses(levels) {
   return out;
 }
 
-/* Старые сохранённые выборы («1080p», «876p») переводим в классы;
-   новые («FHD», «4K») проходят как есть */
 function qualityPrefLabel(saved) {
   if (/^\d+p$/.test(saved)) return qualityLabel(parseInt(saved, 10));
   return saved;
 }
 
-/* Дефолт — 1080p: точное совпадение, иначе ближайший ряд НИЖЕ (на слабом
-   канале лучше чуть легче), и лишь когда ниже пусто — самый лёгкий из
-   верхних. Раньше без точного 1080p пинился максимум — на 4K-only
-   манифестах это был 2160p без всякого ABR, отсюда «4K вечно грузится» */
 function pickDefaultLevel(levels) {
   var below = -1, above = -1;
   for (var i = 0; i < levels.length; i++) {
@@ -841,8 +789,6 @@ function pickDefaultLevel(levels) {
   return below >= 0 ? below : above;
 }
 
-/* Стартовое качество: сохранённый вручную класс (держим между сериями),
-   иначе обычный дефолт. «Авто» — оставляем адаптивный режим как есть */
 function applyQualityPref(hls) {
   var levels = hls.levels || [];
   if (!levels.length) return;
@@ -859,18 +805,12 @@ function applyQualityPref(hls) {
       }
     }
   }
-  /* сохранённый класс в этом манифесте отсутствует — дефолт.
-     qualityH не трогаем: это стартовый пин уровня, а не ручной выбор —
-     иначе попап качества показывал бы «FHD ✓» в режиме «Авто» */
   var ix = pickDefaultLevel(levels);
   if (ix >= 0) {
     hls.currentLevel = ix;
   }
 }
 
-/* Транспорт (перемотка/пауза/серии) — по центру; для сериалов добавляем
-   переходы между сериями, для фильмов их нет. Субтитры/дорожка/качество —
-   отдельной группой справа */
 var TRANSPORT_MOVIE = [['rew', '10'], ['play', ''], ['fwd', '10']];
 var TRANSPORT_SERIAL = [['prev', ''], ['rew', '10'], ['play', ''], ['fwd', '10'], ['next', '']];
 var SIDE_CONTROLS = ['subs', 'audio', 'quality'];
@@ -885,8 +825,6 @@ function makePbtn(id, label) {
   } else if (label) {
     b.innerHTML = PICON[id] + '<span class="pbtn-label">' + esc(label) + '</span>';
   } else {
-    /* кнопки без подписи (prev/next и правая группа): пустой span оставлял бы
-       gap/margin после иконки — она висела бы не по центру кнопки */
     b.innerHTML = PICON[id];
   }
   return b;
@@ -902,19 +840,15 @@ function buildPlayer() {
   var side = el('div', 'pbtn-side');
   SIDE_CONTROLS.forEach(function (id) { side.appendChild(makePbtn(id)); });
   bar.appendChild(side);
-  /* строка 0 — полоса прогресса (перемотка стрелками), строка 1 — кнопки */
   ROWS.player = [
     [document.getElementById('pp-track')],
     Array.prototype.slice.call(bar.querySelectorAll('.pbtn')),
   ];
-  /* play — по центру группы */
   FOCUS.player = { r: 1, c: controls.length === TRANSPORT_SERIAL.length ? 2 : 1 };
 }
 
 function playerVideo() { return $('#pv-video'); }
 
-/* Неустранимая ошибка плеера (нативный режим, а у hls.js исчерпана
-   лестница восстановления): вместо чёрного экрана — оверлей с действием */
 function showPlayerError() {
   state.playerError = true;
   setBuffering(false);
@@ -947,19 +881,13 @@ function stopPlayback() {
   }
   var video = playerVideo();
   video.pause();
-  /* сброс src освобождает буфер: без этого <video> держит докачанные
-     мегабайты, а память ТВ ограничена */
   try { video.removeAttribute('src'); video.load(); } catch (e) {}
 }
 
-/* Индикатор буферизации: «замерший кадр» без спиннера на слабой сети
-   выглядит как зависший плеер */
 var bufferingHintTimer = null;
 function setBuffering(on) {
   var b = $('#player-buffering');
   if (b) b.classList.toggle('hidden', !on);
-  /* текст под крутилкой, если буферизация дольше ~5 с: без него «замерший
-     кадр» на слабой сети неотличим от зависшего плеера */
   clearTimeout(bufferingHintTimer);
   bufferingHintTimer = null;
   var h = $('#buffering-hint');
@@ -973,23 +901,16 @@ function setBuffering(on) {
   }
 }
 
-/* Автопереход к следующей серии: компактная плашка у нижней кромки с
-   отсчётом и кнопками «Смотреть»/«Отмена».
-   Любая серия сериала завершается через ended → отсчёт 5 с → openPlayer */
 function autoNextStart() {
   var t = state.title;
   var nxt = t && isSerial(t) ? nextEpisodeIndex() : null;
   if (!nxt) {
-    /* конец фильма или последней серии: чёрный экран с тостом выглядел как
-       зависание — возвращаемся на карточку тайтла */
     stopPlayback();
     if (t) openDetail(t.id); else goBack();
     return;
   }
   state.autoNext = { s: nxt.s, e: nxt.e, total: 5, left: 5, cur: 0 };
   renderAutoNext();
-  /* тик 250 мс, чтобы полоса отсчёта двигалась плавно: CSS-переходы на ТВ
-     отключены (.tv), поэтому ширину крутит JS */
   state.autoNext.timer = setInterval(autoNextTick, 250);
 }
 
@@ -1004,8 +925,6 @@ function autoNextTick() {
 function renderAutoNext() {
   var an = state.autoNext;
   if (!an) return;
-  /* какая серия дальше — «Далее: Сезон 2 · Серия 1 — Название», иначе
-     отсчёт висел без контекста */
   var t = state.title;
   var se = t && t.seasons && t.seasons[an.s];
   var ep = se && se.episodes[an.e];
@@ -1046,7 +965,6 @@ function seekBy(delta) {
   updateProgress();
 }
 
-/* шаг перемотки по полосе прогресса: ~1/60 длительности, от 15 с до 2 мин */
 function seekStep() {
   var d = playerVideo().duration || (state.playInfo && state.playInfo.duration) || 0;
   return Math.max(15, Math.min(120, Math.floor(d / 60)));
@@ -1060,8 +978,6 @@ function togglePlay() {
 function updatePlayerUI() {
   var t = state.title;
   var info = state.playInfo;
-  /* главная строка — всегда имя тайтла: /play отдаёт в title название
-     серии («Недотёпство заразно»), и имя шоу терялось */
   var name = (t && t.name) || info.title || '';
   $('#pv-title').textContent = name;
   if (info.season != null) {
@@ -1069,8 +985,6 @@ function updatePlayerUI() {
     if (info.title && info.title !== name) line += ' · ' + info.title;
     $('#pv-ep').textContent = line;
   } else {
-    /* фильмы/мультфильмы без второй строки: «год · тип» под названием
-       читалось как мусор — для сериалов остаётся сезон/серия */
     $('#pv-ep').textContent = '';
   }
   $('#pp-total').textContent = fmtTime(info.duration);
@@ -1101,11 +1015,6 @@ function updateControlLabels() {
   $('#player-paused').classList.toggle('hidden', state.playing || video.readyState === 0);
 }
 
-/* Попапы аудио/субтитров/качества строятся из реальных дорожек плеера */
-
-/* Выбор аудио/субтитров запоминаем локально по id тайтла: у KinoPub нет
-   предпочтений дорожек в настройках устройства, а пересоздание плеера
-   (новый сеанс, другая серия) сбрасывало выбор */
 var TRACK_PREFS_KEY = 'kptv-track-prefs';
 
 function trackPrefs() {
@@ -1128,13 +1037,9 @@ function saveTrackPref(kind, value) {
   all[id] = all[id] || {};
   all[id][kind] = value;
   try { localStorage.setItem(TRACK_PREFS_KEY, JSON.stringify(all)); }
-  catch (e) { /* quota / приватный режим — выбор просто не сохранится */ }
+  catch (e) {}
 }
 
-/* Единый список субтитров: встроенные дорожки манифеста (hls.js отдаёт свой
-   список, нативный плеер — только textTracks) + внешние WebVTT-файлы из
-   /play. Лейблы внешних файлов намеренно дублируют стиль манифеста
-   («RUS #01»), совпадения переименовываем с пометкой «(файл)» */
 function subtitleOptions() {
   var opts = [{ kind: 'off', label: 'Выкл', lang: null }];
   var seen = { 'Выкл': true };
@@ -1161,13 +1066,6 @@ function subtitleOptions() {
   return opts;
 }
 
-/* Внешние файлы субтитров (VTT через наш прокси) загружаем и парсим САМИ,
-   без <track>-элементов: на старых ТВ (Tizen) дорожка в режиме hidden не
-   получает cues от слова совсем, а нативный showing не слушает line-height
-   в ::cue. Реплики рисует свой рендерер (subsTick) обычным DOM в
-   #player-subs. Встроенные дорожки манифеста продолжаем вести через API
-   hls.js, но с subtitleDisplay = false — их cues читаем из activeCues. */
-
 function parseVttTimestamp(s) {
   var m = /^(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})/.exec(s);
   if (!m) return 0;
@@ -1181,7 +1079,6 @@ function parseVtt(text) {
   for (var i = 0; i < blocks.length; i++) {
     var lines = blocks[i].split('\n');
     var li = 0;
-    /* пропускаем номер cue и служебные строки — ищем строку таймкодов */
     while (li < lines.length && lines[li].indexOf('-->') < 0) li++;
     if (li >= lines.length) continue;
     var tm = /^\s*(\S+)\s*-->\s*(\S+)/.exec(lines[li]);
@@ -1201,7 +1098,6 @@ function parseVtt(text) {
   return cues;
 }
 
-/* Защита от гонки: ответ на уже невыбранную дорожку выбрасываем */
 var subCuesReq = 0;
 
 function loadSubCues(url) {
@@ -1221,9 +1117,6 @@ function loadSubCues(url) {
   xhr.send(null);
 }
 
-/* Текст cue → безопасный HTML: служебные VTT-теги (голос, класс,
-   karaoke-метки) выкидываем, всё остальное экранируем и возвращаем обратно
-   только простое форматирование */
 function cueHtml(text) {
   var t = String(text)
     .replace(/<\d{2}:\d{2}[0-9:.]*>/g, '')
@@ -1232,7 +1125,6 @@ function cueHtml(text) {
   return t.replace(/&lt;(\/?)(i|b|u)&gt;/gi, '<$1$2>');
 }
 
-/* Встроенная (из манифеста) текстовая дорожка по лейблу */
 function embeddedSubTrack(label) {
   var found = null;
   Array.prototype.forEach.call(playerVideo().textTracks, function (t) {
@@ -1242,9 +1134,6 @@ function embeddedSubTrack(label) {
   return found;
 }
 
-/* Применить выбор субтитров: ничего никогда не уходит в нативный рендер
-   (showing) — внешние файлы парсим сами (loadSubCues), встроенные держим в
-   hidden и читаем activeCues. */
 function applySubChoice(value) {
   state.subs = value;
   var choice = null;
@@ -1269,7 +1158,6 @@ function applySubChoice(value) {
   subsTick();
 }
 
-/* Сырые строки активных реплик на текущей позиции видео */
 function collectSubLines(video) {
   var label = state.subs;
   if (!label || label === 'Выкл') return [];
@@ -1299,8 +1187,6 @@ function collectSubLines(video) {
   return res;
 }
 
-/* Рендерер субтитров: каждые 100 мс перечитывает активные реплики и
-   перерисовывает #player-subs только при смене их состава */
 var SUBS_TICK_MS = 100;
 var subsLastKey = null;
 
@@ -1308,8 +1194,6 @@ function subsTick() {
   var box = document.getElementById('player-subs');
   if (!box || state.screen !== 'player') return;
   var video = playerVideo();
-  /* страховка от двойного вывода: нативный рендер не должен включиться
-     нигде (например, если hls.js переприменил режимы при смене дорожки) */
   Array.prototype.forEach.call(video.textTracks, function (t) {
     if (t.mode === 'showing') t.mode = 'hidden';
   });
@@ -1320,13 +1204,7 @@ function subsTick() {
   var parts = [];
   for (var i = 0; i < lines.length; i++) {
     var h = cueHtml(lines[i]);
-    /* строки без видимого текста (пустые, только теги, висячий \r) бокса
-       не получают — иначе это невидимый пустой прямоугольник, читающийся
-       как зазор между строками */
     if (h.replace(/<\/?[ibu]>/gi, '').trim() === '') continue;
-    /* каждая строка — свой табличный бокс (см. CSS): его высота строго по
-       контенту, без строчной механики — иначе на ТВ строки то разъезжаются,
-       то наезжают друг на друга */
     parts.push('<div class="cue-line">' + h + '</div>');
   }
   if (!parts.length) {
@@ -1334,14 +1212,10 @@ function subsTick() {
     box.classList.add('hidden');
     return;
   }
-  /* БЕЗ <br> между боксами: лишняя строка в контейнере — это и был «зазор»
-     (её высоту давала унаследованная line-height, на ТВ — особенно жирная) */
   box.innerHTML = '<div class="cue">' + parts.join('') + '</div>';
   box.classList.remove('hidden');
 }
 
-/* Восстановление сохранённого выбора дорожек: списки аудио и встроенных
-   субтитров доступны только после разбора манифеста */
 function restoreTracks() {
   var audio = trackPref('audio');
   if (audio && state.hls && state.hls.audioTracks) {
@@ -1365,8 +1239,6 @@ function restoreOnMeta(video) {
   video.addEventListener('loadedmetadata', onMeta);
 }
 
-/* Имена языков для группировки дорожек (ISO-639-1 и -2, как приходят от
-   манифеста и от API). Неизвестный код показываем как есть, без кода — «Другие» */
 var LANG_NAMES = {
   ru: 'Русский', rus: 'Русский', en: 'Английский', eng: 'Английский',
   uk: 'Украинский', ukr: 'Украинский', be: 'Белорусский', bel: 'Белорусский',
@@ -1400,12 +1272,6 @@ function langName(code) {
   return LANG_NAMES[key] || String(code).toUpperCase();
 }
 
-/* Порядок пунктов попапа (аудио/субтитры): безъязычные первыми («Выкл»,
-   «По умолчанию»), затем группы по языку — русская всегда первая, остальные
-   в порядке первого появления; внутри группы исходный порядок сохраняется.
-   Возвращает перестановку исходных индексов: seq[позиция на экране] =
-   исходный индекс пункта. Список сортируется целиком — курсор ходит по
-   экранному порядку и никуда не «прыгает» */
 function groupOrder(langs) {
   var flat = [];
   var groups = {}, order = [];
@@ -1422,10 +1288,6 @@ function groupOrder(langs) {
   return seq;
 }
 
-/* Строки попапа по уже упорядоченным пунктам: при нескольких языковых
-   группах между ними вставляются неселективные заголовки. i пункта — его
-   позиция в items (экранный порядок); выбор маппится на исходный индекс
-   дорожки через origs из popupConfig */
 function groupRows(items, langs) {
   var distinct = {};
   langs.forEach(function (lang) { if (lang) distinct[langName(lang)] = 1; });
@@ -1456,8 +1318,6 @@ function popupConfig(kind) {
     if (!tracks.length) return { title: 'Аудиодорожка', items: ['По умолчанию'], origs: [0], current: 'По умолчанию' };
     var langsA = tracks.map(function (tr) { return tr.lang || null; });
     var seqA = groupOrder(langsA);
-    /* безымянные дорожки нумеруются по порядку внутри своей языковой
-       группы — без исходных «прыгающих» номеров манифеста */
     var counters = {};
     var names = seqA.map(function (oi) {
       var tr = tracks[oi];
@@ -1508,7 +1368,6 @@ function renderPopup() {
       return '<div class="popup-item' + (r.i === sel ? ' sel' : '') + (r.i === state.popupIdx ? ' cur' : '') + '" data-i="' + r.i + '">' +
         esc(r.label) + (r.i === sel ? ' ✓' : '') + '</div>';
     }).join('') + '</div>';
-  // список может не влезать в экран — держим текущий пункт в видимой зоне
   var sc = p.querySelector('.popup-scroll');
   var cur = sc.querySelector('.popup-item.cur');
   if (cur) sc.scrollTop = cur.offsetTop - (sc.clientHeight - cur.offsetHeight) / 2;
@@ -1559,8 +1418,6 @@ function closePopup() {
   showOverlay();
 }
 
-/* Следующая серия */
-
 function nextEpisodeIndex() {
   var t = state.title;
   if (!t || !isSerial(t) || !t.seasons || !t.seasons.length) return null;
@@ -1597,10 +1454,6 @@ function prevEpisode() {
   toast('Серия ' + (prv.e + 1));
 }
 
-/* Запуск воспроизведения */
-
-/* hls.js (~600 КБ) грузим лениво, при первом воспроизведении — не тормозим
-   старт приложения на ТВ */
 var hlsLoading = null;
 function ensureHls() {
   if (window.Hls) return Promise.resolve();
@@ -1609,18 +1462,12 @@ function ensureHls() {
     var s = document.createElement('script');
     s.src = 'js/hls.min.js';
     s.onload = function () { resolve(); };
-    s.onerror = function () { resolve(); /* останется нативный плеер */ };
+    s.onerror = function () { resolve(); };
     document.head.appendChild(s);
   });
   return hlsLoading;
 }
 
-/* Реальная поддержка HEVC у этого браузера: KinoPub отдаёт HEVC- или
-   AVC-манифесты по флагу capability устройства, а настройка hevc в профиле
-   отражает возможности ТВ — для просмотра через браузер важно то, что умеет
-   сам браузер (иначе «Ошибка воспроизведения» на HEVC-only тайтлах).
-   Результат кэшируем: проверка создаёт video-элемент и не меняется
-   в течение сессии */
 var hevcCache = null;
 function hevcSupported() {
   if (hevcCache !== null) return hevcCache;
@@ -1651,8 +1498,6 @@ async function openPlayer(id, sIdx, eIdx, restart) {
       return;
     }
   }
-  /* возврат из плеера — в свой экран; state.prev не трогаем, это точка
-     возврата карточки (иначе после просмотра назад из карточки зацикливается) */
   state.playerPrev = state.screen === 'player' ? state.playerPrev : state.screen;
   state.title = t;
 
@@ -1696,32 +1541,18 @@ function startPlayback(info) {
 
   var video = playerVideo();
   video.textContent = '';
-  /* внешние субтитры <track>-элементами не добавляем: загрузку и парсинг
-     делаем сами (loadSubCues) — на ТВ hidden-дорожки не получают cues */
   subCuesReq++;
   state.subCues = null;
 
-  /* hls.js — в приоритете везде, где есть MSE: только он даёт переключение
-     качества и аудиодорожек (у нативного плеера их списки недоступны).
-     Нативный HLS — фолбэк для устройств без MSE и после неисправимой ошибки
-     hls.js (например, неподдерживаемый кодек в манифесте) */
   if (window.Hls && Hls.isSupported()) {
     var hls = new Hls({
-      /* слабые ТВ тонут в декодировании длинного задела — ограничиваем
-         сзади; спереди наоборот держим подушку побольше: на медленном канале
-         буфер по умолчанию (30 с) постоянно сдыхает на грани */
       backBufferLength: 90,
       maxBufferLength: 60
     });
     state.hls = hls;
     state.hlsRecovered = 0;
-    /* иначе hls.js сам включает дорожку с DEFAULT=YES из манифеста, и
-       субтитры появляются вопреки «Выкл» в меню */
     hls.subtitleDisplay = false;
 
-    /* Фатальные ошибки лечим по нарастающей: сетевую — перезапуском
-       загрузки, медиа — recoverMediaError (до двух раз), и только потом
-       уходим на нативный плеер — с восстановлением позиции, а не с нуля */
     var fallbackNative = function () {
       var pos = video.currentTime;
       try { hls.destroy(); } catch (err) {}
@@ -1743,10 +1574,10 @@ function startPlayback(info) {
     hls.on(Hls.Events.ERROR, function (e, d) {
       if (!d || !d.fatal) return;
       if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        try { hls.startLoad(); return; } catch (err) { /* ниже */ }
+        try { hls.startLoad(); return; } catch (err) {}
       } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && state.hlsRecovered < 2) {
         state.hlsRecovered++;
-        try { hls.recoverMediaError(); return; } catch (err) { /* ниже */ }
+        try { hls.recoverMediaError(); return; } catch (err) {}
       }
       fallbackNative();
     });
@@ -1764,8 +1595,6 @@ function startPlayback(info) {
 
   buildPlayer();
 
-  /* restart («Смотреть» при живой кнопке «Продолжить») игнорирует позицию —
-     старт с начала; иначе встаём на точку возобновления */
   if (info.position && !state.playRestart) {
     var onMeta = function () {
       video.removeEventListener('loadedmetadata', onMeta);
@@ -1777,19 +1606,16 @@ function startPlayback(info) {
   state.playing = true;
   setBuffering(true);
   var playPromise = video.play();
-  if (playPromise && playPromise.catch) { playPromise.catch(function () { /* autoplay policies */ }); }
+  if (playPromise && playPromise.catch) { playPromise.catch(function () {}); }
 
   clearInterval(state.progressTimer);
   state.progressTimer = null;
   if (info.content_id) {
-    /* на паузе прогресс не движется — слать нечего; финальный отчёт шлют
-       обработчики pause/ended */
     state.progressTimer = setInterval(function () {
       var v = playerVideo();
       if (!v.paused && !v.ended) reportProgress();
     }, 10000);
   }
-  /* свой рендерер субтитров: нативный ::cue на ТВ не слушает line-height */
   clearInterval(state.subsTimer);
   state.subsTimer = setInterval(subsTick, SUBS_TICK_MS);
   updatePlayerUI();
@@ -1807,10 +1633,9 @@ function reportProgress() {
       time: Math.floor(video.currentTime),
       season: info.season,
       episode: info.episode,
-      /* бэкенд считает % и убирает досмотренное из «Продолжить просмотр» */
       duration: Math.floor(video.duration || info.duration || 0),
     },
-  }).catch(function () { /* best-effort */ });
+  }).catch(function () {});
 }
 
 function activateControl(id) {
@@ -1844,14 +1669,10 @@ function applyFocus() {
   var scr = state.screen;
   var rows = ROWS[scr], f = FOCUS[scr];
   var screenEl = $('#screen-' + scr);
-  /* очищаем по всему холсту: #topnav лежит вне экранных секций */
   var prevFocused = $('#stage').querySelectorAll('.focused');
   for (var pi = 0; pi < prevFocused.length; pi++) { prevFocused[pi].classList.remove('focused'); }
   var row = rows[f.r];
   if (!row || !row.length) {
-    /* пустой экран (например, /home ответил пустыми рельсами): фокус падает
-       на ближайшую непустую строку — иначе не фокусируется ничего и пульт
-       молчит */
     var nr = -1;
     for (var ri = f.r; ri >= 0; ri--) {
       if (rows[ri] && rows[ri].length) { nr = ri; break; }
@@ -1869,11 +1690,8 @@ function applyFocus() {
   var elm = row[f.c];
   elm.classList.add('focused');
   if (scr === 'player' || scr === 'register') return;
-  /* подгружаем постеры, приближающиеся к вьюпорту */
   hydrateVisible();
 
-  /* фокус в боковом меню: панель фиксированная и всегда видима — контент
-     не скроллим, иначе прощелкивание пунктов дёргает страницу вверх-вниз */
   var inNav = elm.closest ? elm.closest('#topnav') : null;
   var content = screenEl.querySelector('.scroll-content');
   if (content && !inNav) {
@@ -1881,14 +1699,6 @@ function applyFocus() {
     var host = vrow || elm;
     var top = offsetTopIn(host, content);
     var h = host.offsetHeight;
-    /* скроллим минимально: только когда фокус уходит за край видимой зоны,
-       иначе страница «дергается» на каждом нажатии. Сравниваем с высотой
-       блока целиком — иначе высокие ряды обрезаются снизу. Низ контента
-       меряем по последнему ребёнку, а не по scrollHeight: Firefox и часть
-       ТВ-движков не включают padding-bottom в scrollHeight.
-       Весь контент помещается на экране — скролл принудительно 0: запас
-       BOTTOM_GAP снизу иначе создаёт фантомное переполнение, и страница
-       дёргается разок на последнем ряду (было на экране настроек) */
     var last = content.lastElementChild;
     var yMax = 0;
     var fits = false;
@@ -1905,10 +1715,6 @@ function applyFocus() {
     y = Math.max(0, Math.min(y, yMax));
     content.style.transform = 'translateY(' + (-y) + 'px)';
   }
-  /* то же самое по горизонтали: лента сдвигается только когда карточка
-     выходит за правый/левый край. Видимая ширина зависит от экрана:
-     браузерные смещены боковой панелью, деталь — нет. Строка табов
-     (сезоны/папки закладок) скроллится так же, если не влезает */
   var track = elm.closest('.track') || elm.closest('.tabs');
   if (track) {
     var avail = track.parentElement.clientWidth - 8;
@@ -1921,29 +1727,24 @@ function applyFocus() {
     shift = Math.max(0, Math.min(shift, max));
     track.style.transform = 'translateX(' + (-shift) + 'px)';
   }
-  /* сетка «Смотреть все»: на последних строках догружаем следующую страницу */
   if (scr === 'section' && !state.sectionLoading && state.sectionHasMore &&
       f.r >= rows.length - 2) {
     loadSectionPage();
   }
-  /* список подборок: такая же догрузка на последних строках */
   if (scr === 'collections' && !collectionsState.current &&
       !collectionsState.loading && collectionsState.hasMore &&
       f.r >= rows.length - 2) {
     loadCollectionsPage();
   }
-  /* сетка папки закладок: следующая страница у нижних строк */
   if (scr === 'bookmarks' && !bmState.loading && bmState.hasMore &&
       bmState.folder === state.bookmarkFolder &&
       f.r >= rows.length - 2) {
     loadBookmarksPage();
   }
-  /* лента истории: следующая страница у нижних строк */
   if (scr === 'history' && !historyState.loading && historyState.hasMore &&
       f.r >= rows.length - 2) {
     loadHistoryPage(historyToken, historyState.nextPage);
   }
-  /* результаты поиска: догрузка страниц, пока они соответствуют строке запроса */
   if (scr === 'search' && state.searchResults && !searchState.loading &&
       searchState.hasMore && searchState.query === state.query.trim() &&
       f.r >= rows.length - 2) {
@@ -1951,8 +1752,6 @@ function applyFocus() {
   }
 }
 
-/* вход в боковое меню: запоминаем позицию в контенте, встаём на пункт
-   текущего раздела */
 function enterMenu(rows, f) {
   state.lastNavRow[state.screen] = f.r;
   state.lastNavCol[state.screen] = f.c;
@@ -1961,30 +1760,16 @@ function enterMenu(rows, f) {
   for (var k = 0; k < rows[0].length; k++) {
     if (rows[0][k].dataset.nav === state.section) { f.c = k; break; }
   }
-  /* вход мог быть удерживаемой клавишей — её автоповторы гасим в keydown,
-     иначе удержание ↑ «проскакивает» текущий раздел до первого пункта меню */
   menuRepeatGuard = true;
 }
 
-/* Автоповтор клавиши, которой вошли в боковое меню, не листает его пункты.
-   Взводится в enterMenu, сбрасывается первым «свежим» (не repeat) keydown —
-   каждое новое удержание начинается с него, так что осознанное листание
-   пунктов меню с автоповтором работает как раньше */
 var menuRepeatGuard = false;
 
-/* выход из меню обратно в контент — на запомненную позицию */
 function leaveMenu(rows, f) {
   f.r = Math.min(state.lastNavRow[state.screen] || 1, rows.length - 1);
   f.c = Math.min(state.lastNavCol[state.screen] || 0, rows[f.r].length - 1);
 }
 
-/* Геометрический выбор клавиши в соседнем ряду клавиатуры: фокус идёт
-   на ключ, ближайший по горизонтали к текущему, а не на ключ с тем же
-   индексом (ряды разной длины и ширины — «столбцов» у клавиатуры нет).
-   Повторяет D-pad-навигацию Android TV (FocusFinder): кандидат должен
-   лежать строго в направлении движения, перекрывающие «луч» текущего
-   ключа бьют неперекрывающих, дальше веса 13*gap² + offset², как у
-   FocusFinder.getWeightedDistanceFor. Возвращает индекс в row или -1 */
 function nearestKbCol(fromEl, row, dy) {
   var fr = fromEl.getBoundingClientRect();
   var fx = (fr.left + fr.right) / 2;
@@ -2007,8 +1792,6 @@ function move(dx, dy) {
   if (!rows.length) return;
   var browse = BROWSE_SCREENS.indexOf(state.screen) >= 0;
   if (browse && f.r === 0) {
-    /* фокус в боковом меню: ↑/↓ листают пункты, → (или ↓ за последним
-       пунктом) возвращает в контент */
     if (dy) {
       var nc = f.c + dy;
       if (nc >= 0 && nc < rows[0].length) f.c = nc;
@@ -2020,7 +1803,6 @@ function move(dx, dy) {
     return;
   }
   if (browse && dx < 0 && f.r > 0 && f.c === 0) {
-    /* ← с первой колонки — в боковое меню */
     enterMenu(rows, f);
     applyFocus();
     return;
@@ -2032,10 +1814,6 @@ function move(dx, dy) {
     if (r === 0 && browse) {
       enterMenu(rows, f);
     } else {
-      /* ленты: смена строки — с первой карточки; сетки, табы и кнопки —
-         стандартные правила, колонка сохраняется; клавиатура — по геометрии:
-         ряды разной ширины, сохранение индекса телепортировало фокус
-         в противоположный край следующего ряда */
       var newRow = rows[r];
       var isRail = newRow.length && newRow[0].closest('.track');
       var geoCol = -1;
@@ -2062,8 +1840,6 @@ function switchScreen(name) {
   $('#screen-' + name).classList.remove('hidden');
   $('#stage').classList.toggle('chrome-hidden', BROWSE_SCREENS.indexOf(name) < 0);
   state.screen = name;
-  /* контент мог дорисоваться, пока экран был скрыт (у скрытых экранов все
-     offsetTop равны 0) — пересобираем строки фокуса по актуальному DOM */
   if (BROWSE_SCREENS.indexOf(name) >= 0) {
     var content = document.getElementById(SCREEN_CONTENT[name]);
     if (content && content.children.length) {
@@ -2080,15 +1856,9 @@ function switchScreen(name) {
 }
 
 async function openDetail(id) {
-  /* экран, с которого открываем, запоминаем ДО await: спиннер-ветка ниже
-     уже переключает на detail, и после await state.screen врёт (кажется
-     переход detail → detail — старый тайтл пушится в стек и Back снова
-     открывает предыдущую карточку) */
   var from = state.screen;
   var t = byId(id);
   if (!t || !t.detail) {
-    /* пока /items/{id} в полёте, показываем экран детали со спиннером —
-       иначе по «ОК» секунды ничего не происходит вообще */
     if (from !== 'detail') {
       var s = $('#screen-detail');
       s.innerHTML = '<div class="page-head"><h1>Загрузка…</h1></div>';
@@ -2107,8 +1877,6 @@ async function openDetail(id) {
     }
   }
   if (from === 'detail' && state.title && state.title.id !== t.id) {
-    /* переход карточка → карточка («Похожие»): запоминаем, откуда пришли,
-       чтобы Back вернул на предыдущую карточку, а не застрял */
     state.detailStack.push({
       title: state.title,
       season: state.season,
@@ -2129,7 +1897,6 @@ async function openDetail(id) {
 function goBack() {
   if (state.screen === 'register') return;
   if (state.screen === 'home') {
-    /* на главной Backspace из бокового меню уходит в контент */
     if (FOCUS.home.r === 0) { leaveMenu(ROWS.home, FOCUS.home); applyFocus(); }
     return;
   }
@@ -2137,7 +1904,6 @@ function goBack() {
     stopPlayback();
     switchScreen(state.playerPrev === 'player' ? 'home' : state.playerPrev);
   } else if (state.screen === 'detail' && state.detailStack.length) {
-    /* возврат по цепочке карточек: восстанавливаем предыдущую */
     var d = state.detailStack.pop();
     state.title = d.title;
     state.season = d.season;
@@ -2146,17 +1912,13 @@ function goBack() {
     switchScreen('detail');
   } else if (state.screen === 'section') {
     if (state.sectionBack) {
-      /* из сетки тайтлов жанра — обратно в сетку жанров */
       openSectionGrid(state.sectionBack.title, state.sectionBack.url);
     } else if (state.sectionHome) {
-      /* сетка открыта из меню (например, «Мультфильмы») — обратно на главную */
       openSection('home');
     } else {
-      /* из сетки «Смотреть все» — обратно в каталог */
       switchScreen('catalog');
     }
   } else if (state.screen === 'collections' && collectionsState.current) {
-    /* из открытой подборки — обратно к списку подборок */
     openCollections();
   } else if (BROWSE_SCREENS.indexOf(state.screen) >= 0) {
     openSection('home');
@@ -2169,17 +1931,12 @@ function goBack() {
 
 var SECTION_RENDERED = {};
 
-/* раздел меню -> экран, который он открывает */
 var SECTION_SCREENS = {
   home: 'home', movies: 'catalog', serials: 'catalog', cartoons: 'section',
   collections: 'collections', search: 'search', bookmarks: 'bookmarks',
   history: 'history', settings: 'settings',
 };
 
-/* Навигация через меню всегда открывает раздел сначала: фокус — на первую
-   строку контента, прокрутка — наверх. Иначе экран открывался с тем фокусом
-   и скроллом, с каким его покидали (вплоть до фокуса, застрявшего в самом
-   меню): позиция береглась для возврата Back, а не для смены раздела */
 function resetScreenTop(id) {
   var name = SECTION_SCREENS[id];
   if (!name) return;
@@ -2209,8 +1966,6 @@ function openHome() {
 }
 
 function loadHome() {
-  /* /home собирает ~7 upstream-запросов + обогащение «Продолжить просмотр» —
-     на медленном канале до VPS дефолтных 25 с не хватало */
   return api('/home', { timeout: 40000 })
     .then(function (home) {
       DB.home = home;
@@ -2230,8 +1985,6 @@ function loadHome() {
     });
 }
 
-/* Плейсхолдеры, пока /home в полёте: пустой тёмный экран с одним меню
-   на старте приложения выглядел сломанным */
 function renderHomeSkeleton() {
   stopHeroRotation();
   renderNav();
@@ -2253,8 +2006,6 @@ function renderHomeSkeleton() {
   applyFocus();
 }
 
-/* Сбой загрузки главной — инлайн-ошибка с кнопкой «Повторить», а не тост,
-   который мигнёт и исчезнет */
 function renderHomeError(message) {
   stopHeroRotation();
   renderNav();
@@ -2276,20 +2027,12 @@ function renderHomeError(message) {
 
 /* ------------------------------- Каталог --------------------------------- */
 
-/* токен поколения каталога: отсекает поздние ответы от предыдущего
-   раздела/подборки, переиспользующих тот же #catalog-content */
 var catalogToken = 0;
 
-/* сколько карточек показываем в ленте каталога до «Смотреть все» */
 var RAIL_LIMIT = 10;
 
-/* сколько карточек показываем в лентах главной: ленты там смесь фильмов
-   и сериалов, легко 40+ карточек — долистывание пультом до конца занимало
-   минуты. Полные выдачи доступны в «Каталоге» */
 var HOME_RAIL_LIMIT = 20;
 
-/* Скелетон-заглушки, пока раздел грузится: на главной так было изначально,
-   остальные экраны показывали текст «Загрузка…» */
 function skelTrack(count) {
   var track = el('div', 'track');
   for (var i = 0; i < count; i++) track.appendChild(el('div', 'skel skel-card'));
@@ -2318,9 +2061,6 @@ function clearSectionSkeleton() {
 function openCatalog(type) {
   var token = ++catalogToken;
   switchScreen('catalog');
-  /* контейнер один на оба типа: ранний выход по кэшу допустим, только
-     если в нём сейчас именно этот тип (иначе во «Фильмах» остаются
-     сериалы после захода в «Сериалы» и наоборот) */
   if (SECTION_RENDERED['catalog:' + type] && state.catalogType === type) {
     markNavCurrent();
     return;
@@ -2342,7 +2082,6 @@ function openCatalog(type) {
     if (pending > 0) return;
     clearSkeleton();
     if (!made) {
-      /* ничего не загрузилось — даём повторить прямо на месте */
       delete SECTION_RENDERED['catalog:' + type];
       c.appendChild(el('div', 'page-head',
         '<div class="sub">Не удалось загрузить каталог.</div>'));
@@ -2355,7 +2094,6 @@ function openCatalog(type) {
     }
   }
 
-  /* лента жанров — наверху страницы, до контентных секций */
   var genreSlot = el('div');
   c.appendChild(genreSlot);
   pending++;
@@ -2375,12 +2113,8 @@ function openCatalog(type) {
     SECTION_RENDERED['catalog:' + type] = true;
     rebuildRows('catalog', true);
   }, function () {
-    /* жанры не загрузились — просто не показываем ленту */
   }).then(settle);
 
-  /* секции грузятся и рисуются независимо: сбой или зависание одной не
-     блокирует остальные (раньше Promise.all ронял весь экран). Слоты —
-     чтобы порядок лент не зависел от порядка ответов */
   [['Новинки', '/catalog?section=fresh&type=' + type],
    ['Популярное', '/catalog?section=popular&type=' + type],
    ['Лучшее', '/catalog?type=' + type + '&sort=views-'],
@@ -2392,7 +2126,6 @@ function openCatalog(type) {
     api(pair[1]).then(function (res) {
       if (token !== catalogToken) return;
       var raw = (res && res.items) || [];
-      /* в ленте — несколько карточек, последняя — «Смотреть все» в сетку */
       var items = raw.slice(0, RAIL_LIMIT).map(adaptCard);
       if (!items.length) return;
       items.forEach(remember);
@@ -2406,13 +2139,10 @@ function openCatalog(type) {
       SECTION_RENDERED['catalog:' + type] = true;
       rebuildRows('catalog', true);
     }, function () {
-      /* секция не загрузилась — просто не показываем её */
     }).then(settle);
   });
 }
 
-/* Мультфильмы — жанровая сетка (кино + сериалы). Id жанра определяем по
-   справочнику (ищем «мультфильм»), 23 — исторически известный fallback */
 function openCartoons() {
   var cached = state.cartoonGenre;
   var genrePromise = cached
@@ -2465,7 +2195,6 @@ function loadSectionPage(token) {
   if (state.sectionLoading || !state.sectionHasMore) return;
   state.sectionLoading = true;
 
-  /* сетка всех жанров: один запрос, без пагинации */
   if (state.sectionUrl.indexOf('genres:') === 0) {
     var type = state.sectionUrl.slice('genres:'.length);
     api('/genres?type=' + type)
@@ -2533,15 +2262,14 @@ function loadSectionPage(token) {
 
 /* ------------------------------ Подборки -------------------------------- */
 
-/* список подборок кэшируется на клиенте: возврат из подборки мгновенный */
 var collectionsToken = 0;
 var collectionsGrid = null;
 var collectionsState = {
-  items: [],        // загруженные подборки
+  items: [],
   page: 0,
   hasMore: true,
   loading: false,
-  current: null,    // открытая подборка ({id,title}) или null — список
+  current: null,
 };
 
 function openCollections() {
@@ -2564,7 +2292,6 @@ function renderCollectionsScreen() {
   collectionsGrid = grid;
 
   if (!cur) {
-    /* список: рисуем из кэша и догружаем страницы по мере листания */
     collectionsState.items.forEach(function (col) {
       grid.appendChild(collectionCard(col));
     });
@@ -2573,7 +2300,6 @@ function renderCollectionsScreen() {
       for (var i = 0; i < 10; i++) grid.appendChild(el('div', 'skel skel-col'));
       if (!collectionsState.loading) loadCollectionsPage(token);
     } else if (collectionsState.hasMore && !collectionsState.loading) {
-      /* мягкая догрузка следующей страницы, пока пользователь смотрит список */
       loadCollectionsPage(token);
     }
     return;
@@ -2628,7 +2354,6 @@ function loadCollectionsPage(token) {
   });
 }
 
-/* вход в подборку: заменяем сетку списка на сетку её тайтлов */
 function openCollection(col) {
   collectionsState.current = col;
   renderCollectionsScreen();
@@ -2651,7 +2376,6 @@ var KB_LAYOUTS = {
     ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
     ['z', 'x', 'c', 'v', 'b', 'n', 'm', '⌫'],
   ],
-  /* три ряда, как у букв — высота клавиатуры не меняется при переключении */
   digits: [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
     ['-', '.', ',', ':', ';', '(', ')', '!', '?'],
@@ -2659,8 +2383,6 @@ var KB_LAYOUTS = {
   ],
 };
 
-/* сохранённая раскладка клавиатуры (localStorage может быть недоступен
-   в ТВ-вебвью — просто остаёмся на RU) */
 function savedKbLang() {
   try {
     var l = localStorage.getItem('kptv.kbLang');
@@ -2677,7 +2399,6 @@ function renderSearch() {
     '<span class="q-label">Поиск</span><span class="q-text" id="q-text"></span><span class="q-caret"></span>');
   c.appendChild(query);
 
-  /* vrow — клавиатура скроллится как единый блок, а не по строкам */
   var kb = el('div', 'kb vrow');
   var layout = KB_LAYOUTS[state.kbLang];
   layout.forEach(function (rowKeys) {
@@ -2692,7 +2413,6 @@ function renderSearch() {
     kb.appendChild(row);
   });
   var lastRow = el('div', 'kb-row');
-  /* одна клавиша раскладки: по кругу RU → EN → 123, метка — текущая */
   [['layout', null], ['space', 'Пробел'], ['clear', 'Стереть всё'], ['go', 'Найти']]
     .forEach(function (pair) {
       var cls = 'kb-key focusable';
@@ -2720,9 +2440,6 @@ function updateQueryBar() {
   if (qt) qt.textContent = state.query || '';
 }
 
-/* Фокус на клавишу переключения раскладки. После перерисовки клавиатуры
-   (r,c) прежнего элемента может не существовать — строки у раскладок разной
-   длины, слепое сохранение индексов переносило фокус на другую клавишу */
 function focusKbLayoutKey() {
   var rows = ROWS.search;
   for (var r = 0; r < rows.length; r++) {
@@ -2751,7 +2468,7 @@ function searchKey(key) {
   }
   if (key.dataset.kb === 'layout') {
     state.kbLang = state.kbLang === 'ru' ? 'en' : state.kbLang === 'en' ? 'digits' : 'ru';
-    try { localStorage.setItem('kptv.kbLang', state.kbLang); } catch (e) { /* ТВ-вебвью без storage */ }
+    try { localStorage.setItem('kptv.kbLang', state.kbLang); } catch (e) {}
     renderSearch();
     focusKbLayoutKey();
     return;
@@ -2763,9 +2480,6 @@ function searchKey(key) {
   scheduleLiveSearch();
 }
 
-/* Живой поиск: после паузы в наборе (700 мс, от 2 символов) результат
-   подгружается сам — идти к кнопке «Найти» не обязательно. Фокус остаётся
-   на клавиатуре, строка ввода не перерисовывается */
 var searchTimer = null;
 var searchState = { query: '', page: 0, items: [], hasMore: false, loading: false };
 
@@ -2773,8 +2487,6 @@ function scheduleLiveSearch() {
   clearTimeout(searchTimer);
   searchTimer = null;
   if (state.query.trim().length < 2) {
-    /* запрос стёрт или укорочен: результаты прошлого запроса больше не
-       соответствуют строке — убираем их и показываем нейтральный экран */
     if (state.searchResults) {
       state.searchResults = null;
       state.searchQuery = '';
@@ -2798,8 +2510,6 @@ function runSearch(auto) {
 }
 
 function loadSearchPage(page, auto) {
-  /* пока запрос летит, может начаться новый поиск (searchState заменяется):
-     захватываем свой объект, чтобы чужой ответ не затёр свежую выдачу */
   var st = searchState;
   if (st.loading) return;
   st.loading = true;
@@ -2816,9 +2526,8 @@ function loadSearchPage(page, auto) {
       state.searchQuery = st.query;
       renderSearch();
       if (auto) {
-        applyFocus(); /* фокус остаётся на клавиатуре */
+        applyFocus();
       } else {
-        /* ручной «Найти» — сразу к результатам, если они есть */
         FOCUS.search = { r: 1, c: 0 };
         for (var i = 1; i < ROWS.search.length; i++) {
           var first = ROWS.search[i] && ROWS.search[i][0];
@@ -2865,8 +2574,6 @@ function openSearch() {
 
 /* ------------------------------- Закладки -------------------------------- */
 
-/* Состояние пагинации активной папки: папки больше одной upstream-страницы
-   догружаются у нижних строк сетки */
 var bmState = { folder: null, page: 0, hasMore: false, loading: false };
 
 function renderBookmarks() {
@@ -2905,8 +2612,6 @@ function loadBookmarksPage() {
   if (bmState.page > 0 && !bmState.hasMore) return;
   bmState.loading = true;
   var page = bmState.page + 1;
-  /* пока запрос летит, экран мог переоткрыться (bmState заменяется) или
-     папка сменилась: захватываем оба значения, чужой ответ выбрасываем */
   var bm = bmState;
   var folder = state.bookmarkFolder;
   api('/bookmarks/' + folder + '?page=' + page)
@@ -2945,9 +2650,6 @@ function loadBookmarksPage() {
 
 function openBookmarks() {
   switchScreen('bookmarks');
-  /* список папок перечитываем всегда: счётчики меняются тумблером на
-     карточке, новые папки создаются на сайте. Сетки тайтлов при этом не
-     трогаем — вкладки обновляются поверх уже загруженного контента */
   api('/bookmarks')
     .then(function (res) {
       var folders = res.folders || [];
@@ -2974,8 +2676,6 @@ function openBookmarks() {
     })
     .catch(function (e) {
       if (e && e.code === 'not_registered') { showRegister(); return; }
-      /* как в каталоге: инлайн-ошибка с кнопкой повтора, а не один тост —
-         иначе после сбоя остаётся пустой экран */
       var c = $('#bookmarks-content');
       c.innerHTML = '';
       c.appendChild(el('div', 'page-head',
@@ -2992,8 +2692,6 @@ function openBookmarks() {
     });
 }
 
-/* перерисовка вкладок папок поверх уже загруженной сетки: свежие счётчики
-   и папки, созданные на сайте; фокус остаётся на прежнем элементе */
 function updateBookmarkTabs() {
   var c = $('#bookmarks-content');
   var old = c.querySelector('.tabs');
@@ -3031,20 +2729,12 @@ var historyTab = 'all';
 var historyItems = [];
 var HISTORY_TABS = [['all', 'Все'], ['movie', 'Фильмы'], ['serial', 'Сериалы']];
 
-/* пагинация ленты истории: при открытии грузим первую страницу, остальные
-   подтягиваются, когда фокус подходит к нижним строкам (как в сетках
-   раздела/закладок/поиска) */
 var historyState = { nextPage: 1, hasMore: true, loading: false, seen: {} };
 
-/* Единая лента без деления на «продолжить»/«просмотренное»: бэкенд отдаёт
-   одну карточку на тайтл (серии схлопнуты в «Сезон · Серию» самого свежего
-   просмотра), уже отсортированную по свежести. Порядок на клиенте не
-   трогаем — пересортировка давала «прыгающие» записи. */
 function historyCard(t) {
   var c = posterCard(t);
   var sub = c.querySelector('.card-sub');
   var parts = [];
-  /* isSerial, а не type === 'serial': docuserial/tvshow тоже с сезонами */
   if (isSerial(t) && t.media && t.media.season != null) {
     parts.push('Сезон ' + t.media.season + ' · Серия ' + t.media.number);
   } else if (t.year) {
@@ -3067,8 +2757,6 @@ function historyFiltered() {
   return historyItems.filter(function (t) { return !isSerial(t); });
 }
 
-/* Сетка создаётся один раз и дальше дорисовывается инкрементально —
-   пересоздание body на каждой странице давало заметное мигание списка */
 function historyGrid() {
   var body = $('#history-body');
   var grid = body.querySelector('.grid');
@@ -3079,8 +2767,6 @@ function historyGrid() {
   return grid;
 }
 
-/* Дорисовка новых карточек без пересборки списка; порядок — как пришёл
-   от бэкенда */
 function appendHistoryCards(list) {
   var grid = historyGrid();
   list.forEach(function (t) {
@@ -3090,7 +2776,6 @@ function appendHistoryCards(list) {
   });
 }
 
-/* Полная перерисовка: смена вкладки или конец загрузки с пустым результатом */
 function renderHistoryBody(done) {
   var body = $('#history-body');
   if (!body) return;
@@ -3118,7 +2803,6 @@ function historyTabSelect(tab) {
     function (t) { t.classList.toggle('active', t === tab); }
   );
   renderHistoryBody(true);
-  /* фокус остаётся на выбранной вкладке (сами табы не пересоздаются) */
   rebuildRows('history', true);
 }
 
@@ -3147,8 +2831,6 @@ function renderHistory() {
   loadHistoryPage(token, 1);
 }
 
-/* Одна страница ленты истории: дорисовываем инкрементально, чтобы экран был
-   живым сразу; сбой страницы не блокирует навигацию по уже загруженному */
 function loadHistoryPage(token, page) {
   if (token == null) token = historyToken;
   if (historyState.loading || !historyState.hasMore) return;
@@ -3169,8 +2851,6 @@ function loadHistoryPage(token, page) {
         fresh.push(t);
       });
       appendHistoryCards(fresh);
-      /* первая страница пуста (тайтлы сняты upstream), но дальше ещё есть —
-         идём дальше; экран пока пустой */
       if (!historyItems.length && historyState.hasMore) {
         loadHistoryPage(token, page + 1);
         return;
@@ -3184,7 +2864,7 @@ function loadHistoryPage(token, page) {
     .catch(function (e) {
       if (token !== historyToken) return;
       historyState.loading = false;
-      historyState.hasMore = false; /* оборванную ленту дальше не дёргаем */
+      historyState.hasMore = false;
       if (e && e.code === 'not_registered') { showRegister(); return; }
       if (historyItems.length) {
         toast('Не удалось догрузить историю целиком');
@@ -3200,7 +2880,6 @@ function loadHistoryPage(token, page) {
 
 function openHistory() {
   switchScreen('history');
-  /* история меняется после каждого просмотра — всегда перечитываем */
   renderHistory();
 }
 
@@ -3226,7 +2905,6 @@ function renderSettings() {
   c.innerHTML = '';
   c.appendChild(el('div', 'page-head', '<h1>Настройки</h1>'));
 
-  /* карточка профиля: аккаунт и статус подписки (нефокусируемая) */
   if (account) {
     var name = account.username || account.name || '';
     var badge = '';
@@ -3254,9 +2932,6 @@ function renderSettings() {
   var rows = el('div', 'set-rows');
   rows.appendChild(setToggleRow('uhd', '4K (Ultra HD)', 'Запрашивать 4K-стримы, если доступны', !!s.uhd));
   rows.appendChild(setToggleRow('hdr', 'HDR', 'HDR-версии видео', !!s.hdr));
-  /* HEVC — не настройка: флаг на KinoPub выравнивается автоматически под
-     реальную поддержку браузера при каждом воспроизведении, ручной тумблер
-     всё равно перезаписывался */
   c.appendChild(rows);
 
   var acts = el('div', 'set-rows set-acts');
@@ -3274,7 +2949,6 @@ function renderSettings() {
   acts.appendChild(clearHist);
   c.appendChild(acts);
 
-  /* служебная строка: версия и идентификатор устройства для диагностики */
   var ver = (state.settings && state.settings.version) || '';
   var dev = String(window.KPTV.deviceId || '');
   c.appendChild(el('div', 'set-version',
@@ -3302,10 +2976,6 @@ function openSettings() {
     });
 }
 
-/* Общий сейв настроек: переключатели шлют инвертированное значение,
-   poster_size — следующее по циклу. Профиль сохраняем из прошлого ответа,
-   POST отдаёт только настройки (иначе блок подписки пропадает после каждого
-   переключения) */
 function saveSetting(key, value, focusRow) {
   var patch = {};
   patch[key] = value;
@@ -3333,9 +3003,6 @@ function toggleSetting(row) {
   saveSetting(key, !s[key], FOCUS.settings.r);
 }
 
-/* Очистка истории просмотра. Бэкенд стирает только локальные строки
-   устройства (device_history); общая история аккаунта KinoPub не трогается.
-   Экран истории перечитывается при каждом открытии — сбрасывать его не нужно */
 function clearWatchHistory() {
   api('/history/clear', { method: 'POST' })
     .then(function () {
@@ -3347,9 +3014,6 @@ function clearWatchHistory() {
     });
 }
 
-/* Перезагрузка приложения с очисткой кэша. Чистим Cache Storage, если
-   движок его отдаёт; HTTP-кэш самого клиента и так не кэшируется
-   (no-cache в ответах сервера). localStorage НЕ трогаем — там id устройства */
 function reloadApp() {
   var go = function () { window.location.reload(); };
   try {
@@ -3359,14 +3023,13 @@ function reloadApp() {
       }).then(go, go);
       return;
     }
-  } catch (e) { /* старые движки без Cache Storage — просто перезагрузка */ }
+  } catch (e) {}
   go();
 }
 
 function navAction(id) {
   if (id === state.section && BROWSE_SCREENS.indexOf(state.screen) >= 0 &&
       state.screen !== 'catalog') {
-    /* уже в этом разделе — просто снимаем фокус с меню */
     leaveMenu(ROWS[state.screen], FOCUS[state.screen]);
     applyFocus();
     return;
@@ -3376,8 +3039,6 @@ function navAction(id) {
 
 /* ------------------- Модал выбора папки закладок ------------------- */
 
-/* Папки создаются только в аккаунте KinoPub (на сайте) — здесь лишь
-   переключаем принадлежность тайтла уже существующим папкам */
 function openBookmarkFolders() {
   state.modal = 'bookmarks';
   state.modalIdx = 0;
@@ -3431,8 +3092,6 @@ function toggleBookmarkFolder(i) {
       t.bookmarks = r.bookmarks || [];
       var nowIn = t.bookmarks.indexOf(f.id) >= 0;
       if (f.count != null) f.count += (nowIn ? 1 : 0) - (wasIn ? 1 : 0);
-      /* та же папка в списке раздела «Закладки» — там свой объект со
-         своим счётчиком, синхронизируем оба */
       state.bookmarkFolders.forEach(function (bf) {
         if (bf.id === f.id && bf.count != null) {
           bf.count += (nowIn ? 1 : 0) - (wasIn ? 1 : 0);
@@ -3496,8 +3155,6 @@ function activate() {
 
   if (state.screen === 'detail') {
     var a = elm.dataset.act;
-    /* при живой точке возобновления «Смотреть» — старт с начала (resume
-       отдельной кнопкой), иначе обе кнопки делали бы одно и то же */
     if (a === 'watch') return openPlayer(state.title.id, null, null, hasResume(state.title));
     if (a === 'resume') return playResume(state.title.id);
     if (a === 'bookmark') return openBookmarkFolders();
@@ -3512,7 +3169,6 @@ var FEATURED_ID = null;
 
 /* ------------------------------ Клавиатура ------------------------------- */
 
-/* Пульты ТВ отдают keycodes, браузеры — key; приводим к единому виду */
 function normKey(e) {
   var map = {
     37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown',
@@ -3526,14 +3182,11 @@ function normKey(e) {
 
 function playerKey(k, e) {
   if (state.playerError) {
-    /* оверлей ошибки: подтверждение или назад — единственное действие */
     if (k === 'Enter' || k === 'Backspace') goBack();
     e.preventDefault();
     return;
   }
   if (state.autoNext) {
-    /* отсчёт автоперехода: стрелки — между кнопками, OK — выбрать,
-       Backspace — отменить и остаться в плеере */
     var an = state.autoNext;
     if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') {
       an.cur = an.cur ? 0 : 1;
@@ -3560,8 +3213,6 @@ function playerKey(k, e) {
   if (k === 'Backspace') { goBack(); e.preventDefault(); return; }
   var vis = $('#player-overlay').classList.contains('visible');
   if (!vis) {
-    /* панель скрыта: транспортные клавиши работают сразу, остальные —
-       только показывают панель (меньше «холостых» нажатий) */
     if (k === 'ArrowLeft') activateControl('rew');
     else if (k === 'ArrowRight') activateControl('fwd');
     else if (k === ' ' || k === 'Pause' || k === 'Play') activateControl('play');
@@ -3577,7 +3228,6 @@ function playerKey(k, e) {
   } else if (k === 'ArrowDown') {
     if (f.r < ROWS.player.length - 1) { f.r = ROWS.player.length - 1; applyFocus(); }
   } else if (k === 'ArrowLeft') {
-    /* на полосе прогресса стрелки мотают, на кнопках — двигают фокус */
     if (f.r === 0) seekBy(-seekStep());
     else { f.c = Math.max(0, f.c - 1); applyFocus(); }
   } else if (k === 'ArrowRight') {
@@ -3606,8 +3256,6 @@ document.addEventListener('keydown', function (e) {
     return;
   }
   if (state.screen === 'player') return playerKey(k, e);
-  /* повторы клавиши, которой вошли в меню, гасим — фокус остаётся на пункте
-     текущего раздела, а не уезжает к первому пункту (см. enterMenu) */
   if (e.repeat && menuRepeatGuard) { e.preventDefault(); return; }
   menuRepeatGuard = false;
   if (k === 'ArrowLeft') move(-1, 0);
@@ -3616,8 +3264,6 @@ document.addEventListener('keydown', function (e) {
   else if (k === 'ArrowDown') move(0, 1);
   else if (k === 'Enter') activate();
   else if (k === 'Backspace') {
-    /* на экране поиска Backspace стирает символы; «назад» — только когда
-       строка пустая (на остальных экранах — как раньше) */
     if (state.screen === 'search' && state.query.length) {
       state.query = state.query.slice(0, -1);
       updateQueryBar();
@@ -3626,7 +3272,6 @@ document.addEventListener('keydown', function (e) {
   }
   else if (state.screen === 'search' && k.length === 1 &&
            !e.ctrlKey && !e.altKey && !e.metaKey) {
-    /* печать с физической клавиатуры: символ сразу в строку запроса */
     state.query += k;
     updateQueryBar();
     scheduleLiveSearch();
@@ -3634,8 +3279,6 @@ document.addEventListener('keydown', function (e) {
   else return;
   e.preventDefault();
 });
-
-/* Видео-события — прогресс, конец, пауза */
 
 (function wireVideo() {
   var video = playerVideo();
@@ -3674,9 +3317,6 @@ document.addEventListener('keydown', function (e) {
   });
   video.addEventListener('error', function () {
     setBuffering(false);
-    /* hls.js жив — сработает его лестница восстановления (startLoad /
-       recoverMediaError / переход на нативный плеер), не мешаем. Оверлей
-       показываем только когда дальше некуда: нативный плеер и без hls.js */
     if (state.screen === 'player' && !state.hls) showPlayerError();
   });
 })();
@@ -3716,8 +3356,6 @@ $('#stage').addEventListener('mouseout', function (e) {
   var f = e.target.closest('.focusable');
   if (!f || !f.classList.contains('focused')) return;
   if (e.relatedTarget && f.contains(e.relatedTarget)) return;
-  /* увод мыши гасит подсветку; запомненная FOCUS позиция сохраняется
-     для пульта — applyFocus() вернёт её при следующем нажатии */
   clearFocused();
 });
 
@@ -3726,7 +3364,6 @@ function clearFocused() {
   for (var i = 0; i < els.length; i++) els[i].classList.remove('focused');
 }
 
-/* курсор покинул окно приложения целиком */
 $('#stage').addEventListener('mouseleave', clearFocused);
 
 $('#stage').addEventListener('click', function (e) {
@@ -3755,7 +3392,6 @@ $('#stage').addEventListener('click', function (e) {
     var vis = $('#player-overlay').classList.contains('visible');
     var tr = e.target.closest('#pp-track');
     if (tr && vis) {
-      /* клик по полосе прогресса — переход в точку */
       var rect = tr.getBoundingClientRect();
       var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       var video = playerVideo();
@@ -3787,15 +3423,7 @@ $('#screen-player').addEventListener('mousemove', function () {
 
 /* ------------------------------ Масштаб ---------------------------------- */
 
-/* ТВ-вебвью (Tizen/MSX) ненадёжен на translate(-50%,-50%) и врёт в
-   innerWidth/innerHeight в первые секунды после навигации — поэтому
-   центрируем пиксельными left/top, а в transform оставляем только scale().
-   Пересчитываем несколько раз после загрузки: финальный вьюпорт ТВ
-   отдаёт с задержкой */
 function fit() {
-  /* Tizen/MSX-вебвью врёт в window.innerWidth (2880x1620 при реальных
-     1920x1080); documentElement.clientWidth отдаёт честный layout-вьюпорт.
-     Берём минимум из двух — в обычных браузерах они совпадают */
   var de = document.documentElement;
   var w = Math.min(window.innerWidth || Infinity, de.clientWidth || Infinity);
   var h = Math.min(window.innerHeight || Infinity, de.clientHeight || Infinity);
@@ -3816,8 +3444,6 @@ window.addEventListener('load', function () {
   setTimeout(fit, 2500);
 });
 
-/* отладка на реальном ТВ: /client/?debug=1 — живой оверлей с состоянием
-   приложения и перехваченными ошибками, обновляется раз в секунду */
 function debugTick() {
   if (!KPTV_DEBUG) return;
   var d = document.getElementById('fit-debug');
@@ -3871,8 +3497,6 @@ function showRegister() {
     .then(function (data) {
       if (token !== registerToken) return;
       $('#register-code').textContent = data.user_code;
-      /* срок жизни кода от KinoPub: без подписи пользователь не понимает,
-         почему «вчерашний» код не подошёл */
       var exp = $('#register-expires');
       if (exp) {
         if (data.expires_in) {
@@ -3906,8 +3530,6 @@ function showRegister() {
               return;
             }
             if (e.code === 'no_code') {
-              /* строку устройства собрал GC (неактивированные живут сутки) —
-                 код на kino.pub уже не привяжется, начинаем заново */
               $('#register-hint').textContent = e.message;
               showRegister();
               return;

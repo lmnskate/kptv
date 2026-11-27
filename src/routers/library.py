@@ -43,8 +43,6 @@ async def bookmark_folders(
     if result is None:
         return error(502, 'upstream', 'KinoPub недоступен')
 
-    # The folder payload carries an exact item `count` (verified live against
-    # a multi-page folder) — no per-folder content fetches needed.
     folders = [
         {'id': f.get('id'), 'title': f.get('title'), 'count': f.get('count', 0)}
         for f in result.get('items', [])
@@ -112,17 +110,12 @@ async def bookmark_toggle(
     return {
         'ok': True,
         'bookmarks': [
-            # Upstream returns folder objects; accept bare ids too in case
-            # that changes between API versions.
             f.get('id') if isinstance(f, dict) else f
             for f in result.get('folders', [])
         ]
     }
 
 
-# Rows come from the local device_history table; only the cards are
-# enriched upstream (one /items request per row), cached per (device, page)
-# because the client sweeps pages sequentially when opening the screen.
 HISTORY_PER_PAGE = 30
 _LOCAL_HISTORY_TTL = 10
 _local_history_cache: dict = {}
@@ -137,8 +130,6 @@ async def _local_history_page(
     current,
     page
 ):
-    """One page of the device's local history as render-ready cards, or None
-    when the enrichment source (KinoPub) is unreachable."""
     now = time.monotonic()
     key = (current.id, page)
     cached = _local_history_cache.get(key)
@@ -160,7 +151,6 @@ async def _local_history_page(
 
         settings = current.settings
         for row, full in zip(rows, detailed):
-            # Titles withdrawn upstream just drop out of the local feed.
             if full is None or 'item' not in full:
                 continue
             card = vm.card(full['item'], settings)
@@ -193,7 +183,6 @@ async def history(
     request: Request,
     page: int = 1
 ):
-    """The device's own watch history: upstream /history is account-wide."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -209,14 +198,12 @@ async def history(
 async def history_clear(
     request: Request
 ):
-    """Wipe the device's local rows only — the shared account history stays."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
 
     storage.clear_device_history(current.id)
     _drop_local_history_cache(current.id)
-    # The «continue» rail on /home is built from the wiped rows.
     invalidate_home_cache(current.id)
 
     return {'ok': True}
@@ -227,7 +214,6 @@ async def watched_toggle(
     request: Request,
     body: WatchedToggle
 ):
-    """Mark a title/episode watched or unwatched."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -250,7 +236,6 @@ async def subscription_toggle(
     request: Request,
     body: SubscriptionToggle
 ):
-    """Subscribe/unsubscribe a title in the «смотрю» list."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')

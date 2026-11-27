@@ -10,7 +10,6 @@ from devices import migrations
 
 logger = logging.getLogger(__name__)
 
-# sqlite3.connect() does not create missing parent directories itself
 _db_dir = os.path.dirname(server.sqlite_url)
 if _db_dir:
     os.makedirs(_db_dir, exist_ok=True)
@@ -21,13 +20,8 @@ connection = sqlite3.connect(
     check_same_thread=False
 )
 
-# Rows left behind by aborted registrations (token IS NULL). The POST
-# /auth/code endpoint is internet-facing and creates a row per call, so the
-# GC keeps random ids from piling up in the table. Rows predating the
-# created_at column (0) are never touched.
 UNACTIVATED_TTL = 24 * 3600
 
-# History rows kept per device (the screen paginates 30 at a time).
 DEVICE_HISTORY_KEEP = 1000
 
 
@@ -42,7 +36,6 @@ def cleanup_stale_devices():
             'SELECT DISTINCT device_id FROM device_history'
         ).fetchall():
             connection.execute(
-                # COALESCE(…, 0) disables the delete while under the cap
                 """
                 DELETE FROM device_history
                 WHERE device_id = ?1
@@ -55,7 +48,6 @@ def cleanup_stale_devices():
                 [device_id, DEVICE_HISTORY_KEEP - 1]
             )
     except sqlite3.OperationalError:
-        # Table does not exist yet — the first migration will create it.
         pass
 
 
@@ -121,9 +113,6 @@ cleanup_stale_devices()
 
 
 def _check_writable():
-    # Fail fast at startup instead of surfacing "attempt to write a readonly
-    # database" later. A typical cause is a bind-mounted data directory owned
-    # by root while the container runs as uid 1000.
     try:
         connection.execute('CREATE TABLE IF NOT EXISTS _write_probe (id INT)')
         connection.execute('DROP TABLE IF EXISTS _write_probe')
@@ -318,8 +307,6 @@ def touch_device_history(
     position,
     duration
 ):
-    """The /play counterpart of record_device_history: never overwrite an
-    existing local position with the upstream one, only bump recency."""
     connection.execute(
         """
         INSERT INTO device_history
@@ -363,9 +350,6 @@ def get_device_history_entry(
     device_id,
     item_id
 ):
-    """The newest local viewing event of a title — this device's resume
-    point: its season/episode say WHERE the viewer stopped (upstream
-    per-episode flags are account-wide and carry no recency)."""
     cursor = connection.execute(
         """
         SELECT season, episode, position, duration, updated_at
@@ -394,9 +378,6 @@ def get_device_history(
     limit,
     offset
 ):
-    # One row per title: a serial's episode rows collapse into the newest
-    # viewing event (its season/episode become the card's «Сезон · Серия»),
-    # otherwise watching two episodes would list the same serial twice.
     cursor = connection.execute(
         """
         SELECT h.item_id, h.season, h.episode, h.position, h.duration, h.updated_at

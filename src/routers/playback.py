@@ -20,13 +20,9 @@ class ProgressReport(BaseModel):
     time: int
     season: Optional[int] = None
     episode: Optional[int] = None
-    # Lets the local history compute a real progress % (and drop finished
-    # titles from the «continue» rail) instead of storing duration 0.
     duration: Optional[int] = None
 
 
-# Last supportHevc value pushed to KinoPub per device, so /play does not
-# POST the device settings on every single playback.
 _hevc_synced = {}
 
 
@@ -34,14 +30,9 @@ async def _match_hevc_upstream(
     current,
     hevc
 ):
-    """KinoPub generates HEVC or AVC manifests based on the device capability
-    flag, so align it with what the client browser can actually decode.
-    The new value is persisted locally too: the in-process memo only skips
-    the upstream POST, it must not be the only place the flag lives."""
     if _hevc_synced.get(current.id) == hevc:
         return
 
-    # The memo is per-process; guard against unbounded growth if ids churn.
     if len(_hevc_synced) > 256:
         _hevc_synced.clear()
 
@@ -59,10 +50,6 @@ async def play(
     episode: Optional[int] = None,
     hevc: Optional[bool] = None
 ):
-    """Resolve a title to a playable stream: picks the episode/video (explicit
-    or first unfinished), chooses the best file by quality/protocol, and
-    returns the direct CDN stream URL plus subtitles (WebVTT via
-    /api/v1/subtitle, which still proxies and converts them)."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -94,12 +81,10 @@ async def play(
         (playable.get('watching') or {}).get('time') or 0,
         playable.get('duration') or 0
     )
-    # The local-history «continue» rail on /home changed with this row.
     invalidate_home_cache(current.id)
     _drop_local_history_cache(current.id)
 
     info = vm.playable_info(item, playable)
-    # Per-device resume: the local row knows where THIS device stopped.
     local_position = storage.get_device_history_position(
         current.id,
         content_id,
@@ -109,8 +94,6 @@ async def play(
     if local_position:
         duration = playable.get('duration') or 0
         if duration and vm.progress_pct(duration, local_position) >= 95:
-            # Ran to the credits last time — start over instead of resuming
-            # into the final second (which instantly fires «ended»).
             local_position = 0
         info['position'] = local_position
 
@@ -122,7 +105,6 @@ async def progress(
     request: Request,
     body: ProgressReport
 ):
-    """Cross-device resume: report the playback position."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -142,7 +124,6 @@ async def progress(
         body.time,
         body.duration or 0
     )
-    # The local-history «continue» rail on /home changed with this row.
     invalidate_home_cache(current.id)
     _drop_local_history_cache(current.id)
 

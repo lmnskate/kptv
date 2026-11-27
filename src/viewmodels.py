@@ -1,9 +1,3 @@
-"""View-model shaping: raw KinoPub response dicts -> render-ready payloads
-for the web client. Posters and stream URLs go straight to the CDN — the
-player's network reaches it, and relaying video through the single-worker
-backend only added latency and VPS traffic. Only subtitles still use the
-allowlist proxy (see services/proxy.py), for the SRT->WebVTT conversion."""
-
 import config.globals as g
 from config.settings import kp
 from services import proxy
@@ -39,15 +33,11 @@ def card(
     settings,
     media=None
 ):
-    """A list card: poster, ratings, stamps and (for in-progress items) the
-    resume subtitle/percentage."""
     result = {
         'id': item.get('id'),
         'type': item.get('type'),
         'title': item.get('title'),
         'year': item.get('year'),
-        # upstream marks unrated titles with 0 — render as "no rating",
-        # otherwise cards show a bogus «★ 0.0»
         'kinopoisk_rating': item.get('kinopoisk_rating') or None,
         'imdb_rating': item.get('imdb_rating') or None,
         'poster': poster_url(item, settings),
@@ -60,8 +50,6 @@ def card(
         result['backdrop'] = backdrop
 
     if media is not None:
-        # Прогресс — и для фильмов (у них нет season); «Сезон · Серия»
-        # и subtitle — только для сериалов.
         pct = progress_pct(media.get('duration'), media.get('time'))
         if pct:
             result['progress'] = pct
@@ -108,8 +96,6 @@ def _file_url(
 def stream_url(
     playable
 ):
-    """Pick the best file of a video/episode dict: closest quality not above
-    the configured target, preferring the configured protocol."""
     files = [
         f for f in playable.get('files') or []
         if f.get('url')
@@ -124,13 +110,10 @@ def stream_url(
     ):
         rank = _quality_rank(file_entry.get('quality'))
         if rank < 0:
-            # Unknown quality goes to the very end
             group, distance = 2, 0
         elif rank <= target_rank:
-            # Closest quality not above the target
             group, distance = 0, target_rank - rank
         else:
-            # Above the target, prefer the closest one
             group, distance = 1, rank - target_rank
         has_target_protocol = bool((file_entry.get('url') or {}).get(kp.protocol))
 
@@ -161,8 +144,6 @@ def pick_playable(
     season=None,
     episode=None
 ):
-    """Choose the video/episode dict to play: explicit season/episode when
-    given, otherwise the first unfinished, otherwise the first."""
     seasons = item.get('seasons') or []
     if seasons:
         if season is not None:
@@ -217,24 +198,16 @@ def playable_info(
     item,
     playable
 ):
-    """Playback payload for the client player. The stream URL goes straight
-    to the CDN — the player's network reaches it, and skipping the relay
-    saves the VPS a few GB per viewing. Subtitles still flow through the
-    proxy (it converts SRT to WebVTT)."""
     watching = playable.get('watching') or {}
     watched = playable.get('watched') == 1
 
     subtitles = []
     for index, track in enumerate(playable.get('subtitles') or [], start=1):
         if not track.get('url'):
-            # A track without a file is useless to the player and would
-            # register a "None" proxy URL — skip it.
             continue
         proxy.remember_url(track['url'])
         subtitles.append({
             'lang': track.get('lang'),
-            # Same style as the KinoPub HLS manifest track names ("RUS #01");
-            # a missing lang must not blow up the label formatting.
             'label': f"{(track.get('lang') or '').upper()} #{index:02d}".strip(),
             'url': proxy.make_subtitle_url(track['url']),
         })

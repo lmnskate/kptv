@@ -17,9 +17,6 @@ router = APIRouter(
 class SettingsPatch(BaseModel):
     uhd: Optional[bool] = None
     hdr: Optional[bool] = None
-    # HEVC is deliberately NOT patchable by hand: /play aligns the KP-side
-    # supportHevc flag with the browser's real codec support on every
-    # playback, so a manual value would be overwritten anyway.
     poster_size: Optional[Literal['small', 'big']] = None
 
 
@@ -36,7 +33,6 @@ async def settings_get(
     return {
         'settings': current.settings.to_dict(),
         'account': (account or {}).get('user'),
-        # Shown in the client settings screen (about line).
         'version': g.APP_VERSION,
     }
 
@@ -52,8 +48,6 @@ async def settings_update(
 
     changed_kp = []
     for attr in KP_SETTING_KEYS:
-        # hevc stays in KP_SETTING_KEYS for the /play-time sync but is no
-        # longer part of the patch model — getattr must tolerate that.
         value = getattr(patch, attr, None)
         if value is None:
             continue
@@ -63,7 +57,6 @@ async def settings_update(
         current.settings.poster_size = patch.poster_size
 
     current.update_settings()
-    # Poster size changes the shaped cards of the cached /home payload.
     invalidate_home_cache(current.id)
 
     if changed_kp:

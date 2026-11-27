@@ -15,11 +15,6 @@ router = APIRouter(
     tags=['browse']
 )
 
-# /home fans out to ~7 upstream endpoints plus one enrichment request per
-# «continue» item — expensive enough to cache briefly per device (the rails
-# barely change within a minute). Invalidated on settings changes (poster
-# sizes reshape the cards) and on playback activity (the local-history
-# «continue» rail); the TTL covers everything else.
 _HOME_CACHE_TTL = 30
 _home_cache: dict = {}
 
@@ -47,10 +42,6 @@ def invalidate_home_cache(
 async def _continue_cards(
     current
 ):
-    """«Продолжить просмотр» — only the device's local history (upstream
-    /watching/* is account-wide and is not read here). One row per title,
-    newest first; the resume pointer (season/episode, position) comes from
-    the local row, the card art/meta from the enriched full item."""
     rows = storage.get_device_history(current.id, 12, 0)
     if not rows:
         return []
@@ -63,7 +54,6 @@ async def _continue_cards(
     settings = current.settings
     cards = []
     for row, full in zip(rows, detailed):
-        # Titles withdrawn upstream just drop out of the rail.
         if full is None or 'item' not in full:
             continue
         card = vm.card(full['item'], settings)
@@ -74,9 +64,6 @@ async def _continue_cards(
             }
         pct = vm.progress_pct(row['duration'], row['position'])
         if pct >= 95:
-            # Ran to the credits — a finished title is not «continue
-            # watching», and resuming into the last second would instantly
-            # fire «ended» in the player.
             continue
         if pct:
             card['progress'] = pct
@@ -102,8 +89,6 @@ def _paged(
 async def home(
     request: Request
 ):
-    """The landing screen: rails for resume, fresh, popular and
-    the «смотрю» list, already shaped for rendering."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -115,8 +100,6 @@ async def home(
 
     kp = current.kp
 
-    # /items/fresh and /items/popular require the mandatory `type` parameter,
-    # so both are fetched (movies + serials) and merged.
     (fresh_movies, fresh_serials, popular_movies,
      popular_serials, best_movies, best_serials, subscribed) = await asyncio.gather(
         kp.api('/items/fresh', params={'type': 'movie'}),
@@ -217,11 +200,6 @@ async def catalog(
     return paged
 
 
-# Upstream /items/search has no sort parameter and answers newest-first,
-# which buries the obvious hits («мстители» shows this year's knock-offs
-# before the Marvel films). The first pages are pulled once per query into a
-# pool, ranked by title relevance + popularity, and the pool is paginated
-# locally — the client's page=2,3… must not refetch upstream.
 _SEARCH_POOL_CAP = 100
 _SEARCH_POOL_TTL = 300
 _SEARCH_PER_PAGE = 25
@@ -239,8 +217,6 @@ def _title_score(
     item,
     query
 ):
-    """Title relevance to the normalized query: exact match beats prefix
-    beats substring; «Название / Original title» scores by its best half."""
     best = 0
     for part in str(item.get('title') or '').split('/'):
         part = _norm_text(part)
@@ -262,8 +238,6 @@ async def _search_pool(
     raw_query,
     query
 ):
-    """Ranked pool of raw upstream items for the query (None when the first
-    page is unreachable; a later page failing just truncates the pool)."""
     now = time.monotonic()
     cached = _search_cache.get(query)
     if cached is not None and now - cached[0] < _SEARCH_POOL_TTL:
@@ -289,8 +263,6 @@ async def _search_pool(
             break
         page += 1
 
-    # Stable sort: equal scores keep the upstream order; popularity breaks
-    # ties so the well-known title floats above fresh namesakes.
     pool = sorted(
         items[:_SEARCH_POOL_CAP],
         key=lambda i: (
@@ -354,8 +326,6 @@ async def filters(
         current.kp.api('/countries')
     )
 
-    # The docs show these endpoints returning bare arrays, but the live API
-    # has been seen wrapping them as {'items': [...]} — accept both.
     def _items(result):
         if isinstance(result, list):
             entries = result
@@ -378,8 +348,6 @@ async def genres(
     request: Request,
     type: Optional[str] = None
 ):
-    """Genre list for a content type (movie/serial) as [{id, title}].
-    Accepts both bare-array and {'items': [...]} upstream shapes."""
     current = registered(request)
     if current is None:
         return error(401, 'not_registered', 'Устройство не активировано')
@@ -458,8 +426,6 @@ async def item_detail(
         current.kp.api('/bookmarks/get-item-folders', params={'item': content_id})
     )
 
-    # item['bookmarks'] is undocumented; get-item-folders is the documented
-    # source — use it when the item itself doesn't carry the folders.
     in_folders = item.get('bookmarks')
     if in_folders is None:
         in_folders = (item_folders or {}).get('folders') or []
@@ -471,8 +437,6 @@ async def item_detail(
         'cast': item.get('cast'),
         'subscribed': item.get('subscribed') == 1,
         'bookmarks': [
-            # Upstream returns folder objects; accept bare ids too in case
-            # that changes between API versions.
             f.get('id') if isinstance(f, dict) else f
             for f in in_folders
         ],
@@ -491,9 +455,6 @@ async def item_detail(
     if item.get('seasons') is not None:
         detail['seasons'] = _seasons_view(item)
 
-    # Per-device resume point for the «Продолжить просмотр» button: the
-    # newest local history row knows the exact season/episode this device
-    # stopped at (upstream watched flags would only give «first unfinished»).
     row = storage.get_device_history_entry(current.id, content_id)
     if row is not None:
         detail['resume'] = {
