@@ -1320,17 +1320,23 @@ function subsTick() {
   var parts = [];
   for (var i = 0; i < lines.length; i++) {
     var h = cueHtml(lines[i]);
+    /* строки без видимого текста (пустые, только теги, висячий \r) бокса
+       не получают — иначе это невидимый пустой прямоугольник, читающийся
+       как зазор между строками */
+    if (h.replace(/<\/?[ibu]>/gi, '').trim() === '') continue;
     /* каждая строка — свой табличный бокс (см. CSS): его высота строго по
        контенту, без строчной механики — иначе на ТВ строки то разъезжаются,
        то наезжают друг на друга */
-    if (h) parts.push('<div class="cue-line">' + h + '</div>');
+    parts.push('<div class="cue-line">' + h + '</div>');
   }
   if (!parts.length) {
     box.innerHTML = '';
     box.classList.add('hidden');
     return;
   }
-  box.innerHTML = '<div class="cue">' + parts.join('<br>') + '</div>';
+  /* БЕЗ <br> между боксами: лишняя строка в контейнере — это и был «зазор»
+     (её высоту давала унаследованная line-height, на ТВ — особенно жирная) */
+  box.innerHTML = '<div class="cue">' + parts.join('') + '</div>';
   box.classList.remove('hidden');
 }
 
