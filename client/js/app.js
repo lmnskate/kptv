@@ -1320,7 +1320,10 @@ function subsTick() {
   var parts = [];
   for (var i = 0; i < lines.length; i++) {
     var h = cueHtml(lines[i]);
-    if (h) parts.push('<span class="cue-line">' + h + '</span>');
+    /* каждая строка — свой блок (см. CSS): высоту задаёт бокс строки, а не
+       строчный интервал шрифта — иначе на ТВ строки то разъезжаются, то
+       наезжают друг на друга */
+    if (h) parts.push('<div class="cue-line"><span>' + h + '</span></div>');
   }
   if (!parts.length) {
     box.innerHTML = '';
