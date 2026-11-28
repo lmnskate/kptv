@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 
+import admin_panel
 import config.globals as g
 from config.settings import server
 from devices.device import Device
@@ -29,11 +31,33 @@ async def lifespan(
     app
 ):
     await proxy_service.get_session()
+    admin_task = None
+    if server.admin_port:
+        admin_task = asyncio.create_task(admin_panel.serve())
+        admin_task.add_done_callback(_admin_stopped)
     try:
         yield
     finally:
+        if admin_task is not None:
+            admin_panel.shutdown()
+            await asyncio.gather(
+                admin_task,
+                return_exceptions=True
+            )
         await Device.close_all_sessions()
         await proxy_service.close_session()
+
+
+def _admin_stopped(
+    task
+):
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error('Admin panel server failed: %s', exc)
+    else:
+        logger.info('Admin panel server stopped')
 
 
 app = FastAPI(

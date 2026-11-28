@@ -1,6 +1,6 @@
 import aiohttp
 
-APP_VERSION = '1.9.0'
+APP_VERSION = '1.10.0'
 
 BASE_URL = 'https://api.service-kp.com/v1'
 OAUTH_URL = 'https://api.service-kp.com/oauth2/device'

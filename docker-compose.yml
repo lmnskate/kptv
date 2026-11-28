@@ -12,6 +12,13 @@ services:
       SERVER_BIND_PORT: '8000'
       SERVER_PROXY_HEADERS: 'true'
       SERVER_SQLITE_URL: /data/kp-sqlite.db
+      # The admin panel listens on a second port INSIDE the container; it is
+      # published on the host loopback only — reachable via an SSH tunnel,
+      # never from the internet.
+      SERVER_ADMIN_BIND_HOST: 0.0.0.0
+      SERVER_ADMIN_PORT: '8001'
+    ports:
+      - '127.0.0.1:${KPTV_ADMIN_PORT:-8001}:8001'
     volumes:
       - ./data:/data
       - ./backups:/backups

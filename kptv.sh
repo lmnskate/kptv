@@ -11,8 +11,6 @@
 #   restart                Recreate the containers, re-reading .env and compose config
 #   status                 Show container status (state, health, uptime, ports)
 #   backup                 Back up the database into ./backups/ (safe on a live DB)
-#   admin ...              Device management — a command tree of its own:
-#                          './kptv.sh admin' lists its commands and their help
 #   help                   Show this help
 
 set -euo pipefail
@@ -187,7 +185,6 @@ case "${1:-help}" in
     restart) cmd_restart ;;
     status)  cmd_status ;;
     backup)  cmd_backup ;;
-    admin)   shift; exec "$ROOT_DIR/cli/admin" "$@" ;;
     help|-h|--help) cmd_help ;;
     *)
         echo "Unknown command: $1" >&2

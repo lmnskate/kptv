@@ -25,6 +25,9 @@ class ServerSettings(BaseSettings):
     workers: int = 1
     proxy_headers: bool = False
     docs: bool = False
+    admin_port: int | None = 8001
+    admin_bind_host: str = '127.0.0.1'
+    admin_token: str | None = None
 
     @property
     def base_url(

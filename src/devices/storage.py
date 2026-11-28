@@ -171,6 +171,49 @@ def get_device_by_id(
     )
 
 
+def list_devices():
+    cursor = connection.execute(
+        f'SELECT {DEVICE_COLUMNS} FROM devices ORDER BY created_at, rowid'
+    )
+
+    return [
+        to_device_dict(row)
+        for row in cursor.fetchall()
+    ]
+
+
+def count_devices():
+    return connection.execute(
+        'SELECT COUNT(*) FROM devices'
+    ).fetchone()[0]
+
+
+def delete_device(
+    device_id
+):
+    cursor = connection.execute(
+        'DELETE FROM devices WHERE id = ?1',
+        [device_id]
+    )
+    connection.execute(
+        'DELETE FROM device_history WHERE device_id = ?1',
+        [device_id]
+    )
+
+    return cursor.rowcount
+
+
+def reset_device_settings(
+    device_id
+):
+    cursor = connection.execute(
+        'UPDATE devices SET settings = NULL WHERE id = ?1',
+        [device_id]
+    )
+
+    return cursor.rowcount
+
+
 def create_device(
     entry
 ):
@@ -413,6 +456,60 @@ def count_device_history(device_id):
         'SELECT COUNT(DISTINCT item_id) FROM device_history WHERE device_id = ?1',
         [device_id]
     ).fetchone()[0]
+
+
+def count_device_history_rows(device_id):
+    return connection.execute(
+        'SELECT COUNT(*) FROM device_history WHERE device_id = ?1',
+        [device_id]
+    ).fetchone()[0]
+
+
+def get_device_history_rows(
+    device_id,
+    limit,
+    offset
+):
+    cursor = connection.execute(
+        """
+        SELECT item_id, season, episode, position, duration, updated_at
+        FROM device_history
+        WHERE device_id = ?1
+        ORDER BY updated_at DESC, rowid DESC
+        LIMIT ?2 OFFSET ?3
+        """,
+        [device_id, limit, offset]
+    )
+
+    return [
+        {
+            'item_id': row[0],
+            'season': row[1],
+            'episode': row[2],
+            'position': row[3],
+            'duration': row[4],
+            'updated_at': row[5]
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def delete_device_history_entry(
+    device_id,
+    item_id,
+    season,
+    episode
+):
+    cursor = connection.execute(
+        """
+        DELETE FROM device_history
+        WHERE device_id = ?1 AND item_id = ?2
+          AND season = ?3 AND episode = ?4
+        """,
+        [device_id, item_id, season or 0, episode or 0]
+    )
+
+    return cursor.rowcount
 
 
 def clear_device_history(device_id):

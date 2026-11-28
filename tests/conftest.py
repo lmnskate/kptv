@@ -6,6 +6,8 @@ from pathlib import Path
 
 _scratch_db = tempfile.mkstemp(prefix='kptv-tests-', suffix='.db')[1]
 os.environ['SERVER_SQLITE_URL'] = _scratch_db
+# The admin panel binds a TCP port from the app lifespan — never in tests.
+os.environ['SERVER_ADMIN_PORT'] = '0'
 os.environ.setdefault('SERVER_HOST', 'kptv.tests')
 os.environ.setdefault('KP_CLIENT_ID', 'tests-client-id')
 os.environ.setdefault('KP_CLIENT_SECRET', 'tests-client-secret')

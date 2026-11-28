@@ -1,3 +1,5 @@
+**English** · [Русский](changing-ip-or-domain.ru.md)
+
 # Changing IP or Domain
 
 What to do when the server's public IP or its domain changes. The database does
@@ -23,8 +25,8 @@ the IP. `./kptv.sh restart` is not strictly needed, but does not hurt.
 ## The domain changed
 
 1. Reissue the certificate for the new name — the same certbot command as in
-   the README (Install → Domain and TLS), just with the new `-d`. Keep the
-   fixed `--cert-name kptv` so nginx finds it.
+   the README (Install, step 3), just with the new `-d`. Keep the fixed
+   `--cert-name kptv` so nginx finds it.
 2. Set `SERVER_HOST=<new-domain>` in `.env`, then `./kptv.sh restart`.
 3. Point the TVs at the new address (below).
 
@@ -33,8 +35,9 @@ the IP. `./kptv.sh restart` is not strictly needed, but does not hurt.
 - **MSX (Tizen):** MSX → Settings → Start Parameter →
   `https://<your-domain>/msx/start.json`.
 - **TV browser:** open `https://<your-domain>/client/?id=<device-id>` once per
-  TV (device ids: `./kptv.sh admin list`); afterwards the plain `/client/` URL
-  is enough.
+  TV (ids are listed in the admin panel — tunnel in with
+  `ssh -L 8001:localhost:8001 user@<server>`, then http://localhost:8001);
+  afterwards the plain `/client/` URL is enough.
 
 The `?id=` step matters: the client keeps its device id in localStorage per
 origin, so on a new address it would otherwise generate a fresh id and land on

@@ -1,3 +1,5 @@
+**English** · [Русский](restoring-from-backup.ru.md)
+
 # Restoring from a Backup
 
 Use this when the server was reinstalled, the database got corrupted, or you are
@@ -13,25 +15,28 @@ history — lives in a single SQLite file, so restoring is one import.
 
 ## Steps
 
-1. Copy the backup into the project folder on the target server:
+1. Copy the backup to a machine that can open the admin panel (any machine with
+   SSH access to the server will do):
 
    ```bash
-   scp kp-sqlite-20261104-110206.db user@server:/path/to/kptv/
+   scp kp-sqlite-20261104-110206.db user@workstation:~/
    ```
 
-2. Import it (replaces `data/kp-sqlite.db` and restarts the stack):
+2. Open the admin panel. Its port is loopback-only, so open an SSH tunnel first
+   and keep it open:
 
    ```bash
-   ./kptv.sh admin import kp-sqlite-20261104-110206.db
+   ssh -L 8001:localhost:8001 user@<server>
+   # then visit http://localhost:8001 in your browser
    ```
 
-3. Check the devices are there:
+3. Press **«Импорт БД»** and pick the backup. The import replaces the server's
+   database entirely; a safety copy of the previous database is saved next to
+   the main file. No stack restart is needed.
 
-   ```bash
-   ./kptv.sh admin list
-   ```
+4. Check the devices are listed in the panel.
 
-4. Open the client on the TV. Same address as before — everything just works,
+5. Open the client on the TV. Same address as before — everything just works,
    no re-activation. New address — point the TVs once, see
    [Changing IP or Domain](changing-ip-or-domain.md#pointing-the-tvs-at-a-new-address).
 

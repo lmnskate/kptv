@@ -52,6 +52,15 @@ class Device:
         return device
 
     @classmethod
+    async def drop_cache(
+        cls,
+        device_id
+    ):
+        device = cls._cache.pop(device_id, None)
+        if device is not None and device.kp is not None:
+            await device.kp.close_session()
+
+    @classmethod
     async def close_all_sessions(
         cls
     ):
